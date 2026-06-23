@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pi Analytics Design POCs</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #15171a;
+      --muted: #5b616c;
+      --line: #dadde3;
+      --paper: #f7f5ef;
+      --panel: #ffffff;
+      --blue: #2f6fed;
+      --green: #0b8f65;
+      --red: #c8473c;
+      --gold: #b36b12;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        linear-gradient(90deg, rgba(47, 111, 237, .06) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(47, 111, 237, .05) 1px, transparent 1px),
+        var(--paper);
+      background-size: 44px 44px;
+      color: var(--ink);
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .shell {
+      width: min(1180px, calc(100vw - 40px));
+      margin: 0 auto;
+      padding: 42px 0 54px;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(300px, .75fr);
+      gap: 28px;
+      align-items: end;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 30px;
+    }
+
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--blue);
+      font-weight: 750;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(42px, 7vw, 82px);
+      line-height: .94;
+      letter-spacing: 0;
+      max-width: 850px;
+    }
+
+    .lead {
+      margin: 18px 0 0;
+      color: var(--muted);
+      max-width: 760px;
+      font-size: 18px;
+      line-height: 1.55;
+    }
+
+    .story {
+      background: rgba(255, 255, 255, .72);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      box-shadow: 0 24px 70px rgba(24, 28, 36, .08);
+    }
+
+    .story h2,
+    .variant h2,
+    .journey h2 {
+      margin: 0 0 10px;
+      font-size: 16px;
+    }
+
+    .story p,
+    .journey p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    .journey {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin: 28px 0;
+    }
+
+    .step {
+      min-height: 150px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .78);
+      padding: 16px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .step:before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 4px;
+      background: var(--accent);
+    }
+
+    .step strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 15px;
+    }
+
+    .step:nth-child(1) { --accent: var(--blue); }
+    .step:nth-child(2) { --accent: var(--green); }
+    .step:nth-child(3) { --accent: var(--gold); }
+    .step:nth-child(4) { --accent: var(--red); }
+
+    .variants {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .variant {
+      min-height: 330px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-shadow: 0 20px 50px rgba(24, 28, 36, .07);
+      transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+    }
+
+    .variant:hover {
+      transform: translateY(-3px);
+      border-color: color-mix(in srgb, var(--accent), var(--line) 38%);
+      box-shadow: 0 28px 70px rgba(24, 28, 36, .12);
+    }
+
+    .variant p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .variant .tag {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      min-height: 26px;
+      padding: 0 10px;
+      border: 1px solid color-mix(in srgb, var(--accent), #ffffff 60%);
+      border-radius: 999px;
+      color: color-mix(in srgb, var(--accent), #111 18%);
+      background: color-mix(in srgb, var(--accent), #ffffff 92%);
+      font-size: 12px;
+      font-weight: 740;
+    }
+
+    .variant .mock {
+      height: 128px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(90deg, var(--accent) 0 2px, transparent 2px),
+        linear-gradient(180deg, color-mix(in srgb, var(--accent), transparent 86%), transparent 42%),
+        #fafafa;
+      padding: 12px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .mock span {
+      display: block;
+      border: 1px solid rgba(20, 23, 28, .12);
+      background: rgba(255, 255, 255, .72);
+      border-radius: 6px;
+    }
+
+    .mock span:nth-child(1) { grid-row: span 2; }
+    .mock span:nth-child(4) { background: color-mix(in srgb, var(--accent), #ffffff 82%); }
+
+    .open {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 38px;
+      padding: 0 14px;
+      border-radius: 8px;
+      background: var(--ink);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 760;
+    }
+
+    .linear { --accent: #7c8cff; }
+    .stripe { --accent: #635bff; }
+    .apple { --accent: #111111; }
+    .spotify { --accent: #18a957; }
+    .figma { --accent: #ef5b2a; }
+
+    footer {
+      margin-top: 24px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 1040px) {
+      header,
+      .journey {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .variants {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 680px) {
+      .shell {
+        width: min(100% - 24px, 1180px);
+        padding-top: 24px;
+      }
+
+      header,
+      .journey,
+      .variants {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 44px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <section>
+        <p class="eyebrow">Pi Analytics design proofs</p>
+        <h1>AI-native data investigation workbench</h1>
+        <p class="lead">An analyst receives a large unknown folder, opens Pi Analytics, and asks for a summary. The product reads the material, explains what is inside, maps relationships, helps investigate with questions, tables, charts, notes, and saved findings, then produces a hosted report or presentation.</p>
+      </section>
+      <aside class="story">
+        <h2>Product story</h2>
+        <p>Start with a folder. Understand the contents in business language. Investigate financial crime, cost, ROI, or marketing performance. Keep the analyst and AI working together until the conclusion is ready to share.</p>
+      </aside>
+    </header>
+
+    <section class="journey" aria-label="Shared product journey">
+      <div class="step">
+        <strong>1. Intake</strong>
+        <p>Drop a folder or choose a data room. The AI begins reading and shows freshness, progress, and initial coverage.</p>
+      </div>
+      <div class="step">
+        <strong>2. Understand</strong>
+        <p>Inventory cards describe files, tables, documents, and business meaning. A relationship diagram shows how entities connect.</p>
+      </div>
+      <div class="step">
+        <strong>3. Investigate</strong>
+        <p>Ask natural-language questions, switch investigation type, inspect evidence, adjust filters, make notes, and save findings.</p>
+      </div>
+      <div class="step">
+        <strong>4. Present</strong>
+        <p>Build a polished report or presentation from saved findings, preview it, and host a shareable version in one click.</p>
+      </div>
+    </section>
+
+    <section class="variants" aria-label="Design variants">
+      <a class="variant linear" href="linear-agent-dashboard.html">
+        <div>
+          <span class="tag">Linear-inspired</span>
+          <div class="mock" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+        </div>
+        <div>
+          <h2>Dark Investigation Cockpit</h2>
+          <p>Dense, focused workbench with intake, data map, Q&A thread, evidence, charting, and report assembly.</p>
+        </div>
+        <span class="open">Open variant</span>
+      </a>
+
+      <a class="variant stripe" href="stripe-analytics-workspace.html">
+        <div>
+          <span class="tag">Stripe-inspired</span>
+          <div class="mock" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+        </div>
+        <div>
+          <h2>Finance Analysis Workbook</h2>
+          <p>Light consulting workspace for catalog review, relationship mapping, scenario analysis, ROI, and polished deliverables.</p>
+        </div>
+        <span class="open">Open variant</span>
+      </a>
+
+      <a class="variant apple" href="apple-product-demo.html">
+        <div>
+          <span class="tag">Apple-inspired</span>
+          <div class="mock" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+        </div>
+        <div>
+          <h2>Guided Analyst Flow</h2>
+          <p>A calm four-stage workbench: connect folder, understand data, investigate, and present.</p>
+        </div>
+        <span class="open">Open variant</span>
+      </a>
+
+      <a class="variant spotify" href="spotify-analysis-library.html">
+        <div>
+          <span class="tag">Spotify-inspired</span>
+          <div class="mock" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+        </div>
+        <div>
+          <h2>Investigation Library</h2>
+          <p>Unknown folders become collections with replayable investigation trails, saved findings, and deliverables.</p>
+        </div>
+        <span class="open">Open variant</span>
+      </a>
+
+      <a class="variant figma" href="figma-canvas-lab.html">
+        <div>
+          <span class="tag">Figma-inspired</span>
+          <div class="mock" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+        </div>
+        <div>
+          <h2>Canvas Investigation Board</h2>
+          <p>Folder map, relationship diagram, sticky insights, charts, tables, and report storyboard on one board.</p>
+        </div>
+        <span class="open">Open variant</span>
+      </a>
+    </section>
+
+    <footer>All files are standalone HTML with embedded styles and scripts.</footer>
+  </main>
+</body>
+</html>

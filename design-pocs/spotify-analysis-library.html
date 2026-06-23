@@ -1,0 +1,1346 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spotify Investigation Library</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0f0d;
+      --panel: #121715;
+      --panel-2: #18201d;
+      --panel-3: #202a26;
+      --ink: #f4f7f5;
+      --muted: #a5b0aa;
+      --soft: #708078;
+      --line: #2b3832;
+      --green: #1ed760;
+      --lime: #a7f252;
+      --blue: #58a6ff;
+      --purple: #b084f5;
+      --orange: #f2a74b;
+      --red: #ff6b6b;
+      --shadow: 0 26px 80px rgba(0, 0, 0, .42);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 14% 0, rgba(30, 215, 96, .22), transparent 34%),
+        radial-gradient(circle at 84% 18%, rgba(176, 132, 245, .12), transparent 28%),
+        var(--bg);
+      color: var(--ink);
+    }
+
+    button,
+    input,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 250px minmax(0, 1fr) 340px;
+      gap: 0;
+      min-height: 100vh;
+    }
+
+    .library {
+      background: rgba(10, 14, 12, .92);
+      border-right: 1px solid var(--line);
+      padding: 18px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 850;
+      font-size: 18px;
+    }
+
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--green), var(--blue));
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .24);
+    }
+
+    .library h2 {
+      margin: 0 0 10px;
+      font-size: 12px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--soft);
+    }
+
+    .collection-list {
+      display: grid;
+      gap: 8px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+
+    .collection {
+      min-height: 62px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--muted);
+      text-align: left;
+      padding: 9px;
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+    }
+
+    .collection.active,
+    .collection:hover {
+      border-color: var(--line);
+      background: var(--panel-2);
+      color: var(--ink);
+    }
+
+    .cover {
+      width: 42px;
+      height: 42px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--green), var(--purple));
+    }
+
+    .collection:nth-child(2) .cover { background: linear-gradient(135deg, var(--orange), var(--red)); }
+    .collection:nth-child(3) .cover { background: linear-gradient(135deg, var(--blue), var(--lime)); }
+    .collection:nth-child(4) .cover { background: linear-gradient(135deg, var(--purple), var(--blue)); }
+
+    .collection b {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .collection span {
+      display: block;
+      color: var(--soft);
+      font-size: 11px;
+    }
+
+    .mini-actions {
+      display: grid;
+      gap: 8px;
+    }
+
+    .main {
+      padding: 20px;
+      min-width: 0;
+    }
+
+    .hero {
+      min-height: 250px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(135deg, rgba(30, 215, 96, .34), transparent 42%),
+        linear-gradient(320deg, rgba(88, 166, 255, .22), transparent 44%),
+        var(--panel);
+      box-shadow: var(--shadow);
+      padding: 20px;
+      display: grid;
+      grid-template-columns: 164px minmax(0, 1fr) 240px;
+      gap: 20px;
+      align-items: end;
+    }
+
+    .hero-cover {
+      aspect-ratio: 1;
+      border-radius: 8px;
+      background:
+        linear-gradient(135deg, rgba(255, 255, 255, .24), transparent 50%),
+        linear-gradient(135deg, var(--green), var(--purple));
+      box-shadow: 0 24px 70px rgba(0, 0, 0, .35);
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-size: clamp(34px, 6vw, 70px);
+      line-height: .9;
+      letter-spacing: 0;
+    }
+
+    .hero p {
+      margin: 12px 0 0;
+      color: #d9e3de;
+      line-height: 1.45;
+      max-width: 720px;
+    }
+
+    .drop {
+      border: 1px dashed rgba(255, 255, 255, .28);
+      border-radius: 8px;
+      padding: 14px;
+      background: rgba(0, 0, 0, .16);
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+
+    .drop strong {
+      font-size: 16px;
+    }
+
+    .drop span {
+      color: #d9e3de;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .primary,
+    .secondary,
+    .job,
+    .quick,
+    .pill-button {
+      min-height: 38px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--ink);
+      padding: 0 14px;
+    }
+
+    .primary {
+      border: 0;
+      background: var(--green);
+      color: #031006;
+      font-weight: 850;
+    }
+
+    .secondary:hover,
+    .job:hover,
+    .quick:hover,
+    .pill-button:hover {
+      background: var(--panel-3);
+      border-color: #425248;
+    }
+
+    .hidden-input {
+      display: none;
+    }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin: 16px 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .fresh {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 5px rgba(30, 215, 96, .13);
+    }
+
+    .progress {
+      display: grid;
+      gap: 8px;
+      min-width: 280px;
+    }
+
+    .progress-line {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .track {
+      height: 8px;
+      border-radius: 999px;
+      background: #1d2622;
+      overflow: hidden;
+      border: 1px solid var(--line);
+    }
+
+    .fill {
+      height: 100%;
+      width: 4%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--green), var(--blue));
+      transition: width .35s ease;
+    }
+
+    .jobs {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin: 0 0 16px;
+    }
+
+    .job {
+      border-radius: 8px;
+      text-align: left;
+      min-height: 76px;
+      color: var(--muted);
+      padding: 12px;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .job.active {
+      color: #031006;
+      background: var(--green);
+      border-color: var(--green);
+      font-weight: 820;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(300px, .9fr) minmax(0, 1.1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(18, 23, 21, .94);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    .panel-head {
+      padding: 14px 16px;
+      min-height: 50px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      font-size: 14px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: #d7e0dc;
+    }
+
+    .panel-head small {
+      color: var(--soft);
+      font-size: 12px;
+    }
+
+    .panel-body {
+      padding: 16px;
+    }
+
+    .inventory {
+      display: grid;
+      gap: 10px;
+    }
+
+    .file {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #101512;
+      padding: 12px;
+      min-height: 92px;
+    }
+
+    .file b {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 13px;
+      margin-bottom: 6px;
+    }
+
+    .file span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .tag {
+      min-height: 22px;
+      padding: 0 8px;
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      background: rgba(30, 215, 96, .12);
+      color: #94f5b7;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .map {
+      height: 390px;
+      position: relative;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      overflow: hidden;
+      background:
+        linear-gradient(90deg, rgba(255, 255, 255, .04) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(255, 255, 255, .04) 1px, transparent 1px),
+        #0f1412;
+      background-size: 28px 28px;
+    }
+
+    .line {
+      position: absolute;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, rgba(30, 215, 96, .74), transparent);
+      transform-origin: left center;
+    }
+
+    .line.a { width: 210px; left: 92px; top: 116px; transform: rotate(10deg); }
+    .line.b { width: 224px; left: 104px; top: 256px; transform: rotate(-22deg); background: linear-gradient(90deg, transparent, rgba(88, 166, 255, .74), transparent); }
+    .line.c { width: 172px; left: 326px; top: 136px; transform: rotate(44deg); background: linear-gradient(90deg, transparent, rgba(176, 132, 245, .76), transparent); }
+    .line.d { width: 170px; left: 342px; top: 274px; transform: rotate(-34deg); background: linear-gradient(90deg, transparent, rgba(242, 167, 75, .72), transparent); }
+
+    .node {
+      width: 138px;
+      min-height: 66px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(24, 32, 29, .96);
+      color: var(--ink);
+      position: absolute;
+      text-align: left;
+      padding: 10px;
+      box-shadow: 0 18px 46px rgba(0, 0, 0, .32);
+    }
+
+    .node:hover,
+    .node.active {
+      border-color: var(--green);
+      box-shadow: 0 0 0 4px rgba(30, 215, 96, .12), 0 18px 46px rgba(0, 0, 0, .36);
+    }
+
+    .node b {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .node span {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+    }
+
+    .node.one { left: 22px; top: 88px; }
+    .node.two { left: 286px; top: 74px; }
+    .node.three { left: 300px; top: 250px; }
+    .node.four { right: 26px; top: 112px; }
+    .node.five { right: 46px; bottom: 32px; }
+
+    .qa {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 330px;
+      gap: 16px;
+      margin-top: 16px;
+      align-items: start;
+    }
+
+    .ask {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+    }
+
+    .ask input,
+    textarea {
+      width: 100%;
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #0f1412;
+      color: var(--ink);
+      padding: 0 14px;
+      outline: none;
+    }
+
+    textarea {
+      border-radius: 8px;
+      min-height: 76px;
+      padding: 10px;
+      resize: vertical;
+    }
+
+    .ask input:focus,
+    textarea:focus {
+      border-color: var(--green);
+      box-shadow: 0 0 0 4px rgba(30, 215, 96, .12);
+    }
+
+    .answer {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0f1412;
+      padding: 14px;
+      min-height: 118px;
+    }
+
+    .answer h3 {
+      margin: 0 0 8px;
+      font-size: 18px;
+    }
+
+    .answer p {
+      margin: 0;
+      color: #d2ddd7;
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    .evidence {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(260px, .9fr);
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--soft);
+    }
+
+    tbody tr:hover td {
+      background: rgba(30, 215, 96, .07);
+    }
+
+    .chart {
+      display: grid;
+      gap: 10px;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1fr) 38px;
+      gap: 8px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .bar-track {
+      height: 24px;
+      border-radius: 999px;
+      background: #1d2622;
+      overflow: hidden;
+      border: 1px solid var(--line);
+    }
+
+    .bar {
+      display: block;
+      height: 100%;
+      width: var(--w);
+      border: 0;
+      border-radius: 999px;
+      color: transparent;
+      background: linear-gradient(90deg, var(--green), var(--blue));
+    }
+
+    .manual {
+      display: grid;
+      gap: 10px;
+    }
+
+    .manual-box {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0f1412;
+      padding: 12px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .manual-box b {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 8px;
+    }
+
+    .findings {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .finding {
+      border: 1px solid rgba(30, 215, 96, .35);
+      color: #a8f6c3;
+      background: rgba(30, 215, 96, .12);
+      border-radius: 999px;
+      padding: 6px 9px;
+      font-size: 12px;
+    }
+
+    .deliverable {
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 260px;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .sections {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .section {
+      min-height: 126px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0f1412;
+      padding: 12px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .section b {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 8px;
+    }
+
+    .share {
+      display: grid;
+      gap: 9px;
+    }
+
+    .share-status {
+      min-height: 22px;
+      color: #a8f6c3;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .agent {
+      border-left: 1px solid var(--line);
+      background: rgba(10, 14, 12, .92);
+      padding: 18px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
+      gap: 14px;
+    }
+
+    .agent h2 {
+      margin: 0;
+      font-size: 20px;
+    }
+
+    .agent p {
+      margin: 7px 0 0;
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 13px;
+    }
+
+    .thread {
+      display: grid;
+      gap: 9px;
+      overflow: auto;
+      align-content: start;
+      padding-right: 2px;
+    }
+
+    .bubble {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 10px;
+      color: #d2ddd7;
+      line-height: 1.45;
+      font-size: 13px;
+    }
+
+    .bubble small {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--green);
+      font-weight: 850;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      font-size: 11px;
+    }
+
+    .quick-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .quick {
+      border-radius: 8px;
+      text-align: left;
+      font-size: 12px;
+      min-height: 42px;
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      place-items: center;
+      padding: 24px;
+      background: rgba(0, 0, 0, .70);
+      z-index: 30;
+    }
+
+    .overlay.open {
+      display: grid;
+    }
+
+    .preview {
+      width: min(900px, 100%);
+      max-height: min(780px, calc(100vh - 48px));
+      overflow: auto;
+      background: #f6f7f5;
+      color: #111612;
+      border-radius: 8px;
+      box-shadow: 0 44px 120px rgba(0, 0, 0, .55);
+    }
+
+    .preview-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 22px;
+      border-bottom: 1px solid #d7ded9;
+    }
+
+    .preview-head h2 {
+      margin: 0;
+      font-size: 25px;
+    }
+
+    .preview-body {
+      padding: 22px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .slide {
+      border: 1px solid #d7ded9;
+      background: #fff;
+      border-radius: 8px;
+      padding: 18px;
+      min-height: 132px;
+    }
+
+    .slide b {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .slide p {
+      margin: 0;
+      color: #58615b;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 1240px) {
+      .app {
+        grid-template-columns: 220px minmax(0, 1fr);
+      }
+
+      .agent {
+        grid-column: 2;
+        position: static;
+        height: auto;
+        border-left: 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .hero,
+      .qa,
+      .deliverable {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 860px) {
+      .app {
+        display: block;
+      }
+
+      .library {
+        position: static;
+        height: auto;
+      }
+
+      .main {
+        padding: 12px;
+      }
+
+      .hero,
+      .grid,
+      .ask,
+      .evidence {
+        grid-template-columns: 1fr;
+      }
+
+      .jobs,
+      .sections {
+        grid-template-columns: 1fr;
+      }
+
+      .status-row {
+        display: grid;
+      }
+
+      .map {
+        min-height: 444px;
+      }
+
+      .line {
+        display: none;
+      }
+
+      .node.one { left: 16px; top: 24px; }
+      .node.two { right: 16px; left: auto; top: 94px; }
+      .node.three { left: 16px; top: 190px; }
+      .node.four { right: 16px; top: 270px; }
+      .node.five { left: 74px; right: auto; bottom: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="library" aria-label="Investigation library">
+      <div class="brand"><span class="brand-mark"></span><span>Pi Analytics</span></div>
+      <div>
+        <h2>Collections</h2>
+        <div class="collection-list">
+          <button class="collection active"><span class="cover"></span><span><b>Unknown finance room</b><span>Reading and analysis</span></span></button>
+          <button class="collection"><span class="cover"></span><span><b>Cost reduction pack</b><span>Saved findings</span></span></button>
+          <button class="collection"><span class="cover"></span><span><b>ROI cases</b><span>Replay trail</span></span></button>
+          <button class="collection"><span class="cover"></span><span><b>Marketing mix</b><span>Deliverables</span></span></button>
+        </div>
+      </div>
+      <div>
+        <h2>Investigation trail</h2>
+        <div class="collection-list" id="trail">
+          <button class="collection active"><span class="cover"></span><span><b>Start collection</b><span>Choose folder</span></span></button>
+          <button class="collection"><span class="cover"></span><span><b>Understand files</b><span>Pending</span></span></button>
+          <button class="collection"><span class="cover"></span><span><b>Save findings</b><span>Pending</span></span></button>
+        </div>
+      </div>
+      <div class="mini-actions">
+        <button class="secondary" id="replayButton">Replay investigation trail</button>
+        <button class="secondary" id="refreshButton">Refresh collection</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <section class="hero">
+        <div class="hero-cover" aria-hidden="true"></div>
+        <div>
+          <h1>Unknown folder collection</h1>
+          <p>Turn a messy folder into a living analysis collection: inventory, relationship map, Q&A, tables, charts, saved findings, and hosted deliverables.</p>
+        </div>
+        <div class="drop">
+          <strong>Drop folder</strong>
+          <span>Mock intake for large unknown folders and data rooms.</span>
+          <button class="primary" id="selectFolder">Choose folder</button>
+          <input class="hidden-input" id="folderInput" type="file" webkitdirectory directory multiple>
+        </div>
+      </section>
+
+      <div class="status-row">
+        <div class="fresh"><span class="dot"></span><span id="freshness">Waiting for folder</span></div>
+        <div class="progress">
+          <div class="progress-line"><span id="scanState">AI has not started reading</span><span id="scanPercent">0%</span></div>
+          <div class="track"><div class="fill" id="scanFill"></div></div>
+        </div>
+      </div>
+
+      <div class="jobs">
+        <button class="job active" data-job="crime">Find financial crime</button>
+        <button class="job" data-job="cost">Reduce product cost</button>
+        <button class="job" data-job="roi">Calculate ROI</button>
+        <button class="job" data-job="marketing">Identify best marketing channel</button>
+      </div>
+
+      <section class="grid">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Data inventory</h2>
+            <small id="coverage">Awaiting scan</small>
+          </div>
+          <div class="panel-body inventory" id="inventory"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Relationship diagram</h2>
+            <small id="focusLabel">Focus: Suppliers</small>
+          </div>
+          <div class="panel-body">
+            <div class="map">
+              <div class="line a"></div>
+              <div class="line b"></div>
+              <div class="line c"></div>
+              <div class="line d"></div>
+              <button class="node one active" data-focus="Suppliers"><b>Suppliers</b><span>Vendor identity and risk</span></button>
+              <button class="node two" data-focus="Payments"><b>Payments</b><span>Payment timing and release</span></button>
+              <button class="node three" data-focus="Approvals"><b>Approvals</b><span>People and exceptions</span></button>
+              <button class="node four" data-focus="Products"><b>Products</b><span>SKU cost and margin</span></button>
+              <button class="node five" data-focus="Channels"><b>Channels</b><span>Spend to revenue</span></button>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section class="qa">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Analysis player</h2>
+            <small>Ask and drill deeper</small>
+          </div>
+          <div class="panel-body">
+            <div class="ask">
+              <input id="questionInput" value="What did this folder teach us first?" aria-label="Analyst question">
+              <button class="primary" id="askButton">Ask AI</button>
+            </div>
+            <article class="answer">
+              <h3 id="answerTitle">Waiting for collection</h3>
+              <p id="answerText">Choose a folder to create the collection. The answer narrative, evidence table, graph, and suggested next steps will update here.</p>
+            </article>
+            <div class="evidence">
+              <div>
+                <div class="panel-head" style="padding:0 0 8px;border:0;min-height:auto;">
+                  <h2>Generated table</h2>
+                  <small id="rowCount">0 rows</small>
+                </div>
+                <table aria-label="Generated table">
+                  <thead><tr><th>Finding</th><th>Evidence</th><th>Impact</th></tr></thead>
+                  <tbody id="evidenceRows"></tbody>
+                </table>
+              </div>
+              <div>
+                <div class="panel-head" style="padding:0 0 8px;border:0;min-height:auto;">
+                  <h2>Graph</h2>
+                  <small>Click a bar</small>
+                </div>
+                <div class="chart" id="chart"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel">
+          <div class="panel-head">
+            <h2>Manual analyst area</h2>
+            <small>Notes and saved findings</small>
+          </div>
+          <div class="panel-body manual">
+            <div class="manual-box"><b>Filters</b><label><input type="checkbox" checked> Highest impact</label><br><label><input type="checkbox" checked> Fresh items</label><br><label><input type="checkbox"> Deliverable ready</label></div>
+            <div class="manual-box"><b>Assumptions</b>Prioritize evidence that can be explained to stakeholders without specialist context.</div>
+            <div class="manual-box"><b>Annotation</b><textarea id="annotation">Pin concise findings so the collection can be replayed later.</textarea></div>
+            <div class="manual-box"><b>Saved findings</b><button class="secondary" id="addFinding">Add current finding</button><div class="findings" id="savedFindings"></div></div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="panel deliverable">
+        <div>
+          <div class="panel-head">
+            <h2>Deliverable collection</h2>
+            <small>Report and presentation sections</small>
+          </div>
+          <div class="panel-body sections" id="reportSections"></div>
+        </div>
+        <div class="share">
+          <button class="primary" id="previewButton">Preview report</button>
+          <button class="secondary" id="shareButton">Host and share</button>
+          <div class="share-status" id="shareStatus"></div>
+        </div>
+      </section>
+    </main>
+
+    <aside class="agent" aria-label="AI assistant">
+      <div>
+        <h2>AI analyst</h2>
+        <p id="agentStatus">Always in the loop: read, explain, suggest, drill in, and assemble the deliverable.</p>
+      </div>
+      <div class="fresh"><span class="dot"></span><span id="assistantFresh">Idle</span></div>
+      <div class="thread" id="thread">
+        <div class="bubble"><small>AI</small>Choose a folder and I will create an analysis collection with a summary, relationships, and first questions.</div>
+      </div>
+      <div class="quick-list">
+        <button class="quick" data-prompt="Replay the investigation and explain the key turn.">Replay key turn</button>
+        <button class="quick" data-prompt="What evidence should be pinned to the collection?">What should be pinned?</button>
+        <button class="quick" data-prompt="Create the shareable conclusion from saved findings.">Create shareable conclusion</button>
+      </div>
+    </aside>
+  </div>
+
+  <div class="overlay" id="previewOverlay" role="dialog" aria-modal="true" aria-label="Report preview">
+    <article class="preview">
+      <div class="preview-head">
+        <h2>Hosted report preview</h2>
+        <button class="secondary" id="closePreview" style="color:#111612;background:#fff;">Close</button>
+      </div>
+      <div class="preview-body" id="previewBody"></div>
+    </article>
+  </div>
+
+  <script>
+    const emptyInventory = [
+      ["Unknown folder", "Choose a folder to create the first analysis collection.", "Waiting"],
+      ["Collection map", "Relationships will appear after the AI reads the material.", "Waiting"],
+      ["Saved evidence", "Findings, charts, and report sections will collect here.", "Waiting"]
+    ];
+
+    const readyInventory = [
+      ["Supplier files", "Vendor identity, payment terms, bank changes, and risk notes.", "Finance"],
+      ["Payment and invoice set", "Amounts, dates, approvals, purchase references, and exceptions.", "Cash"],
+      ["Product cost pack", "SKU cost drivers, freight, materials, warranty, and margin movement.", "Cost"],
+      ["Investment cases", "Spend, benefit estimates, realized outcomes, and payback timing.", "ROI"],
+      ["Marketing packet", "Channel spend, lead quality, pipeline, and closed revenue.", "Growth"]
+    ];
+
+    const jobData = {
+      crime: {
+        label: "Financial crime",
+        title: "Financial crime collection",
+        answer: "The collection's first strong signal is a small group of new suppliers with urgent payments and overlapping approval activity. This is a clear review queue, not a vague anomaly list.",
+        rows: [
+          ["New supplier review", "Paid within ten days of setup", "$418k exposure"],
+          ["Approval overlap", "Requester and release owner cluster", "High priority"],
+          ["Split invoices", "Adjacent amounts below review level", "$126k exposure"],
+          ["Bank changes", "Changed shortly before release", "Confirm independently"]
+        ],
+        bars: [["Urgent pay", 88], ["New supplier", 76], ["Split invoice", 58], ["Bank change", 46]],
+        finding: "Pinned finding: new suppliers with urgent payments form the review queue."
+      },
+      cost: {
+        label: "Cost reduction",
+        title: "Cost reduction collection",
+        answer: "The cost collection shows that packaging consolidation and planned freight windows create the fastest savings. The evidence is practical and can be acted on without changing product design.",
+        rows: [
+          ["Packaging", "Same material bought at five prices", "$310k saving"],
+          ["Freight", "Premium shipments from late releases", "$185k saving"],
+          ["Resin", "Small orders below efficient quantity", "$97k saving"],
+          ["Warranty", "Two SKUs drive repeat handling", "$74k saving"]
+        ],
+        bars: [["Packaging", 86], ["Freight", 66], ["Resin", 42], ["Warranty", 31]],
+        finding: "Pinned finding: packaging and freight changes lead the savings case."
+      },
+      roi: {
+        label: "ROI",
+        title: "ROI collection",
+        answer: "Field enablement has the best ROI and fastest payback. The collection keeps brand spend visible, but the AI does not recommend incremental funding without stronger measurement.",
+        rows: [
+          ["Field enablement", "Revenue uplift in existing accounts", "4.6x ROI"],
+          ["Partner portal", "Adoption with low ongoing cost", "2.8x ROI"],
+          ["Automation pilot", "Savings delayed by rollout", "1.9x ROI"],
+          ["Brand campaign", "Weak conversion evidence", "0.8x ROI"]
+        ],
+        bars: [["Enablement", 92], ["Partner", 56], ["Automation", 38], ["Brand", 16]],
+        finding: "Pinned finding: field enablement leads ROI and payback."
+      },
+      marketing: {
+        label: "Marketing performance",
+        title: "Marketing performance collection",
+        answer: "Partner webinars are the best channel by closed revenue per dollar. Paid search remains useful for volume, but incremental budget should move toward webinars and retargeting.",
+        rows: [
+          ["Partner webinars", "High conversion and larger deal size", "$9.40 per dollar"],
+          ["Retargeting", "Reliable conversion on modest spend", "$6.10 per dollar"],
+          ["Paid search", "High volume, mixed quality", "$4.80 per dollar"],
+          ["Field events", "Large deals but slow payback", "$3.20 per dollar"]
+        ],
+        bars: [["Webinars", 94], ["Retarget", 61], ["Search", 48], ["Events", 32]],
+        finding: "Pinned finding: partner webinars outperform on revenue per dollar."
+      }
+    };
+
+    const state = {
+      scanned: false,
+      job: "crime",
+      focus: "Suppliers",
+      findings: []
+    };
+
+    const els = {
+      selectFolder: document.getElementById("selectFolder"),
+      folderInput: document.getElementById("folderInput"),
+      freshness: document.getElementById("freshness"),
+      assistantFresh: document.getElementById("assistantFresh"),
+      scanState: document.getElementById("scanState"),
+      scanPercent: document.getElementById("scanPercent"),
+      scanFill: document.getElementById("scanFill"),
+      coverage: document.getElementById("coverage"),
+      inventory: document.getElementById("inventory"),
+      focusLabel: document.getElementById("focusLabel"),
+      questionInput: document.getElementById("questionInput"),
+      askButton: document.getElementById("askButton"),
+      answerTitle: document.getElementById("answerTitle"),
+      answerText: document.getElementById("answerText"),
+      evidenceRows: document.getElementById("evidenceRows"),
+      rowCount: document.getElementById("rowCount"),
+      chart: document.getElementById("chart"),
+      annotation: document.getElementById("annotation"),
+      addFinding: document.getElementById("addFinding"),
+      savedFindings: document.getElementById("savedFindings"),
+      reportSections: document.getElementById("reportSections"),
+      shareStatus: document.getElementById("shareStatus"),
+      previewButton: document.getElementById("previewButton"),
+      shareButton: document.getElementById("shareButton"),
+      previewOverlay: document.getElementById("previewOverlay"),
+      previewBody: document.getElementById("previewBody"),
+      closePreview: document.getElementById("closePreview"),
+      thread: document.getElementById("thread"),
+      agentStatus: document.getElementById("agentStatus"),
+      replayButton: document.getElementById("replayButton"),
+      refreshButton: document.getElementById("refreshButton"),
+      trail: document.getElementById("trail")
+    };
+
+    function renderInventory(items) {
+      els.inventory.innerHTML = items.map(item => `
+        <article class="file"><b>${item[0]} <span class="tag">${item[2]}</span></b><span>${item[1]}</span></article>
+      `).join("");
+    }
+
+    function addThread(who, text) {
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      bubble.innerHTML = `<small>${who}</small>${text}`;
+      els.thread.appendChild(bubble);
+      els.thread.scrollTop = els.thread.scrollHeight;
+    }
+
+    function renderJob() {
+      const data = jobData[state.job];
+      els.answerTitle.textContent = state.scanned ? data.title : "Waiting for collection";
+      els.answerText.textContent = state.scanned ? data.answer : "Choose a folder to create the collection. The answer narrative, evidence table, graph, and suggested next steps will update here.";
+      els.evidenceRows.innerHTML = (state.scanned ? data.rows : []).map(row => `
+        <tr><td>${row[0]}</td><td>${row[1]}</td><td>${row[2]}</td></tr>
+      `).join("");
+      els.rowCount.textContent = state.scanned ? `${data.rows.length} rows` : "0 rows";
+      els.chart.innerHTML = (state.scanned ? data.bars : []).map(bar => `
+        <div class="bar-row">
+          <span>${bar[0]}</span>
+          <div class="bar-track"><button class="bar" style="--w:${bar[1]}%" data-focus="${bar[0]}">${bar[0]}</button></div>
+          <b>${bar[1]}</b>
+        </div>
+      `).join("");
+      document.querySelectorAll(".job").forEach(button => button.classList.toggle("active", button.dataset.job === state.job));
+      renderReport();
+    }
+
+    function renderFindings() {
+      els.savedFindings.innerHTML = state.findings.map(text => `<span class="finding">${text}</span>`).join("");
+    }
+
+    function renderReport() {
+      const data = jobData[state.job];
+      const sections = [
+        ["Collection summary", state.scanned ? data.answer : "Awaiting folder."],
+        ["Data inventory", state.scanned ? "Finance, cost, ROI, marketing, and supporting documents are organized." : "Inventory pending."],
+        ["Evidence", state.scanned ? `${data.rows.length} evidence rows and ranked graph signals.` : "Evidence pending."],
+        ["Saved findings", state.findings.length ? state.findings.join(" ") : "Pin findings to complete the report."]
+      ];
+      els.reportSections.innerHTML = sections.map(section => `<article class="section"><b>${section[0]}</b>${section[1]}</article>`).join("");
+    }
+
+    function updateTrail(done) {
+      if (!done) return;
+      els.trail.innerHTML = `
+        <button class="collection active"><span class="cover"></span><span><b>Folder read</b><span>5 groups found</span></span></button>
+        <button class="collection active"><span class="cover"></span><span><b>Relationships mapped</b><span>22 links</span></span></button>
+        <button class="collection active"><span class="cover"></span><span><b>First answer saved</b><span>${jobData[state.job].label}</span></span></button>
+      `;
+    }
+
+    function startScan() {
+      state.scanned = false;
+      els.freshness.textContent = "Reading now";
+      els.assistantFresh.textContent = "Reading now";
+      els.agentStatus.textContent = "Creating collection and reading business material.";
+      els.scanState.textContent = "AI reading folder";
+      els.scanPercent.textContent = "5%";
+      els.scanFill.style.width = "5%";
+      els.coverage.textContent = "Creating collection";
+      renderInventory(emptyInventory);
+      addThread("AI", "I am creating an analysis collection from the folder and grouping files by business purpose.");
+
+      const steps = [
+        [30, "Grouping files into collection", "Inventory forming"],
+        [58, "Mapping relationships", "Relationship diagram ready soon"],
+        [84, "Preparing investigation trail", "Trail ready soon"],
+        [100, "Collection ready", "5 groups, 22 links"]
+      ];
+      let index = 0;
+      const timer = setInterval(() => {
+        const step = steps[index];
+        els.scanState.textContent = step[1];
+        els.scanPercent.textContent = `${step[0]}%`;
+        els.scanFill.style.width = `${step[0]}%`;
+        els.coverage.textContent = step[2];
+        if (step[0] === 100) {
+          clearInterval(timer);
+          state.scanned = true;
+          els.freshness.textContent = "Fresh 2 minutes ago";
+          els.assistantFresh.textContent = "Ready";
+          els.agentStatus.textContent = "Collection ready. Ask questions, pin findings, replay the trail, or host a report.";
+          renderInventory(readyInventory);
+          renderJob();
+          updateTrail(true);
+          addThread("AI", "The collection is ready. I found finance, cost, ROI, and marketing investigation paths.");
+        }
+        index += 1;
+      }, 520);
+    }
+
+    function askQuestion(prompt) {
+      const question = prompt || els.questionInput.value.trim();
+      if (!question) return;
+      if (!state.scanned) startScan();
+      const data = jobData[state.job];
+      els.answerTitle.textContent = `${data.label}: answer`;
+      els.answerText.textContent = `${data.answer} Current focus: ${state.focus}. Analyst question: "${question}"`;
+      addThread("Analyst", question);
+      addThread("AI", `${data.finding} I can pin this or use it in the hosted deliverable.`);
+    }
+
+    function setFocus(label) {
+      state.focus = label;
+      els.focusLabel.textContent = `Focus: ${label}`;
+      document.querySelectorAll(".node").forEach(node => node.classList.toggle("active", node.dataset.focus === label));
+      if (state.scanned) {
+        els.answerText.textContent = `${jobData[state.job].answer} Focused on ${label}.`;
+        addThread("AI", `Focused the collection on ${label}.`);
+      }
+    }
+
+    function addFinding() {
+      const finding = jobData[state.job].finding;
+      if (!state.findings.includes(finding)) state.findings.push(finding);
+      renderFindings();
+      renderReport();
+      updateTrail(true);
+      addThread("AI", "Pinned the current finding to the collection and deliverable.");
+    }
+
+    function preview() {
+      const data = jobData[state.job];
+      const saved = state.findings.length ? state.findings.join(" ") : data.finding;
+      els.previewBody.innerHTML = `
+        <section class="slide"><b>1. Collection answer</b><p>${state.scanned ? data.answer : "Choose a folder to fill the report."}</p></section>
+        <section class="slide"><b>2. Inventory and relationships</b><p>Files were organized into finance, cost, ROI, marketing, and supporting document groups with connected entities.</p></section>
+        <section class="slide"><b>3. Evidence playlist</b><p>${data.rows.map(row => `${row[0]}: ${row[2]}`).join(". ")}.</p></section>
+        <section class="slide"><b>4. Saved finding</b><p>${saved}</p></section>
+      `;
+      els.previewOverlay.classList.add("open");
+    }
+
+    function share() {
+      els.shareStatus.textContent = "Hosted report ready: pi.analytics/share/investigation-collection";
+      addThread("AI", "The collection report is hosted and ready to share.");
+    }
+
+    els.selectFolder.addEventListener("click", () => {
+      els.folderInput.click();
+      startScan();
+    });
+    els.folderInput.addEventListener("change", startScan);
+    els.refreshButton.addEventListener("click", startScan);
+    els.replayButton.addEventListener("click", () => {
+      addThread("AI", "Replay: folder read, inventory grouped, relationships mapped, first answer generated, finding pinned.");
+      updateTrail(true);
+    });
+    document.querySelectorAll(".job").forEach(button => {
+      button.addEventListener("click", () => {
+        state.job = button.dataset.job;
+        renderJob();
+        addThread("AI", `Switched collection to ${jobData[state.job].label}.`);
+      });
+    });
+    document.querySelectorAll(".node").forEach(node => node.addEventListener("click", () => setFocus(node.dataset.focus)));
+    els.chart.addEventListener("click", event => {
+      const bar = event.target.closest(".bar");
+      if (bar) setFocus(bar.dataset.focus);
+    });
+    els.askButton.addEventListener("click", () => askQuestion());
+    els.questionInput.addEventListener("keydown", event => {
+      if (event.key === "Enter") askQuestion();
+    });
+    document.querySelectorAll(".quick").forEach(button => {
+      button.addEventListener("click", () => {
+        els.questionInput.value = button.dataset.prompt;
+        askQuestion(button.dataset.prompt);
+      });
+    });
+    els.addFinding.addEventListener("click", addFinding);
+    els.annotation.addEventListener("input", renderReport);
+    els.previewButton.addEventListener("click", preview);
+    els.shareButton.addEventListener("click", share);
+    els.closePreview.addEventListener("click", () => els.previewOverlay.classList.remove("open"));
+    els.previewOverlay.addEventListener("click", event => {
+      if (event.target === els.previewOverlay) els.previewOverlay.classList.remove("open");
+    });
+
+    renderInventory(emptyInventory);
+    renderJob();
+    renderReport();
+  </script>
+</body>
+</html>

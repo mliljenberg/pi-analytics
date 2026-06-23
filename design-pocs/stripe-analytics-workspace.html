@@ -1,0 +1,1267 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stripe Analysis Workbook</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f8fb;
+      --paper: #ffffff;
+      --paper-2: #f0f4ff;
+      --ink: #172033;
+      --muted: #667085;
+      --line: #d9e0ea;
+      --blue: #635bff;
+      --cyan: #00a6d6;
+      --green: #0a8f68;
+      --gold: #b45f06;
+      --red: #c2413a;
+      --violet: #8b5cf6;
+      --shadow: 0 18px 55px rgba(25, 38, 70, .10);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        linear-gradient(120deg, rgba(99, 91, 255, .12), transparent 36%),
+        linear-gradient(300deg, rgba(0, 166, 214, .10), transparent 34%),
+        var(--bg);
+    }
+
+    button,
+    input,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .shell {
+      width: min(1440px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 22px 0 40px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .nav {
+      min-height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      border: 1px solid rgba(217, 224, 234, .82);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .82);
+      backdrop-filter: blur(16px);
+      padding: 0 14px;
+      box-shadow: 0 12px 30px rgba(31, 45, 78, .06);
+      position: sticky;
+      top: 12px;
+      z-index: 10;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 220px;
+      font-weight: 820;
+    }
+
+    .brand-mark {
+      width: 32px;
+      height: 32px;
+      border-radius: 7px;
+      background: linear-gradient(135deg, var(--blue), var(--cyan));
+    }
+
+    .nav-tabs {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .nav-tabs span {
+      min-height: 34px;
+      display: inline-flex;
+      align-items: center;
+      padding: 0 12px;
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .nav-tabs span.active {
+      background: #eef1ff;
+      color: var(--blue);
+      font-weight: 760;
+    }
+
+    .fresh {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 5px rgba(10, 143, 104, .12);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(280px, .86fr) minmax(0, 1.44fr) 330px;
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, .94);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    .card-head {
+      min-height: 50px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .card-head h2 {
+      margin: 0;
+      font-size: 14px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: #334155;
+    }
+
+    .card-head small {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .card-body {
+      padding: 16px;
+    }
+
+    .intro h1 {
+      margin: 0;
+      font-size: clamp(30px, 4vw, 56px);
+      line-height: .98;
+      letter-spacing: 0;
+    }
+
+    .intro p {
+      color: var(--muted);
+      line-height: 1.5;
+      margin: 14px 0 0;
+      font-size: 14px;
+    }
+
+    .drop {
+      margin-top: 16px;
+      border: 1px dashed #b9c4d7;
+      background:
+        linear-gradient(135deg, rgba(99, 91, 255, .11), transparent 50%),
+        #fbfcff;
+      border-radius: 8px;
+      min-height: 150px;
+      padding: 18px;
+      display: grid;
+      align-content: center;
+      gap: 12px;
+    }
+
+    .drop strong {
+      font-size: 18px;
+    }
+
+    .drop span {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .primary,
+    .secondary,
+    .job,
+    .quick {
+      min-height: 38px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      padding: 0 13px;
+      background: #fff;
+      color: var(--ink);
+    }
+
+    .primary {
+      border: 0;
+      color: #fff;
+      font-weight: 760;
+      background: linear-gradient(135deg, var(--blue), #7c3aed);
+      box-shadow: 0 12px 24px rgba(99, 91, 255, .25);
+    }
+
+    .secondary:hover,
+    .job:hover,
+    .quick:hover {
+      border-color: #aeb8ca;
+      background: #f8faff;
+    }
+
+    .hidden-input {
+      display: none;
+    }
+
+    .progress {
+      display: grid;
+      gap: 9px;
+      margin-top: 16px;
+    }
+
+    .progress-row {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .progress-track {
+      height: 9px;
+      border-radius: 999px;
+      background: #e9edf5;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 6%;
+      background: linear-gradient(90deg, var(--blue), var(--cyan));
+      transition: width .35s ease;
+    }
+
+    .jobs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
+      margin-top: 16px;
+    }
+
+    .job {
+      text-align: left;
+      min-height: 66px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+      background: #fbfcff;
+    }
+
+    .job.active {
+      border-color: rgba(99, 91, 255, .45);
+      background: #f0f2ff;
+      color: #332bb8;
+      font-weight: 740;
+    }
+
+    .catalog {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: 10px;
+    }
+
+    .file-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      min-height: 134px;
+      padding: 12px;
+      background: #fbfcff;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .file-card b {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 7px;
+    }
+
+    .file-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.42;
+    }
+
+    .pill {
+      width: fit-content;
+      border-radius: 999px;
+      min-height: 22px;
+      padding: 0 8px;
+      display: inline-flex;
+      align-items: center;
+      background: #edf7f4;
+      color: var(--green);
+      font-size: 11px;
+      font-weight: 760;
+    }
+
+    .relationship {
+      height: 300px;
+      margin-top: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background:
+        linear-gradient(90deg, rgba(99, 91, 255, .06) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(99, 91, 255, .06) 1px, transparent 1px),
+        #fbfcff;
+      background-size: 26px 26px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .connector {
+      position: absolute;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, rgba(99, 91, 255, .72), transparent);
+      transform-origin: left center;
+    }
+
+    .connector.a { width: 200px; left: 104px; top: 93px; transform: rotate(9deg); }
+    .connector.b { width: 210px; left: 120px; top: 190px; transform: rotate(-19deg); background: linear-gradient(90deg, transparent, rgba(0, 166, 214, .74), transparent); }
+    .connector.c { width: 164px; left: 330px; top: 112px; transform: rotate(43deg); background: linear-gradient(90deg, transparent, rgba(10, 143, 104, .72), transparent); }
+    .connector.d { width: 160px; left: 344px; top: 210px; transform: rotate(-32deg); background: linear-gradient(90deg, transparent, rgba(180, 95, 6, .68), transparent); }
+
+    .node {
+      position: absolute;
+      width: 138px;
+      min-height: 62px;
+      border: 1px solid #cdd6e5;
+      border-radius: 8px;
+      background: #fff;
+      color: var(--ink);
+      padding: 10px;
+      text-align: left;
+      box-shadow: 0 14px 28px rgba(31, 45, 78, .10);
+    }
+
+    .node:hover,
+    .node.active {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 4px rgba(99, 91, 255, .12), 0 16px 32px rgba(31, 45, 78, .16);
+    }
+
+    .node b {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .node span {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.3;
+    }
+
+    .node.one { left: 24px; top: 70px; }
+    .node.two { left: 274px; top: 48px; }
+    .node.three { left: 292px; top: 178px; }
+    .node.four { right: 28px; top: 82px; }
+    .node.five { right: 44px; bottom: 26px; }
+
+    .agent {
+      display: grid;
+      grid-template-rows: auto auto minmax(260px, 1fr) auto;
+      gap: 12px;
+      position: sticky;
+      top: 86px;
+      max-height: calc(100vh - 104px);
+    }
+
+    .agent h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .agent p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .thread {
+      display: grid;
+      gap: 9px;
+      overflow: auto;
+      align-content: start;
+      padding-right: 2px;
+    }
+
+    .bubble {
+      border: 1px solid var(--line);
+      background: #fbfcff;
+      border-radius: 8px;
+      padding: 10px;
+      color: #344054;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .bubble small {
+      display: block;
+      color: var(--blue);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      font-size: 11px;
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+
+    .quick-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .quick {
+      text-align: left;
+      font-size: 12px;
+      min-height: 42px;
+    }
+
+    .workbook {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(330px, .8fr);
+      gap: 16px;
+    }
+
+    .ask {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 9px;
+    }
+
+    .ask input,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      min-height: 40px;
+      padding: 0 12px;
+      color: var(--ink);
+      background: #fff;
+      outline: none;
+    }
+
+    .ask input:focus,
+    textarea:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 4px rgba(99, 91, 255, .12);
+    }
+
+    .answer {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: linear-gradient(180deg, #ffffff, #fbfcff);
+      padding: 14px;
+      min-height: 112px;
+    }
+
+    .answer h3 {
+      margin: 0 0 8px;
+      font-size: 17px;
+    }
+
+    .answer p {
+      margin: 0;
+      color: #475467;
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    .analysis-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.12fr) minmax(260px, .88fr);
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    th,
+    td {
+      padding: 10px 8px;
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-weight: 760;
+    }
+
+    tbody tr:hover td {
+      background: #f6f8ff;
+    }
+
+    .chart {
+      display: grid;
+      gap: 10px;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1fr) 44px;
+      gap: 9px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .bar-track {
+      height: 24px;
+      border-radius: 999px;
+      background: #edf1f8;
+      overflow: hidden;
+    }
+
+    .bar {
+      border: 0;
+      height: 100%;
+      width: var(--w);
+      background: linear-gradient(90deg, var(--blue), var(--cyan));
+      border-radius: 999px;
+      display: block;
+      color: transparent;
+    }
+
+    .scenario {
+      display: grid;
+      gap: 10px;
+    }
+
+    .scenario-row {
+      display: grid;
+      grid-template-columns: 1fr 96px;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fbfcff;
+      font-size: 13px;
+    }
+
+    .scenario-row output {
+      text-align: right;
+      color: var(--green);
+      font-weight: 820;
+    }
+
+    .manual-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .manual-box {
+      border: 1px solid var(--line);
+      background: #fbfcff;
+      border-radius: 8px;
+      padding: 10px;
+      min-height: 116px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .manual-box b {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+
+    .manual-box textarea {
+      min-height: 64px;
+      padding: 8px;
+      resize: vertical;
+    }
+
+    .findings {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .finding {
+      border-radius: 999px;
+      border: 1px solid rgba(10, 143, 104, .25);
+      color: var(--green);
+      background: #eefaf6;
+      padding: 6px 9px;
+      font-size: 12px;
+      font-weight: 720;
+    }
+
+    .deliverable {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 330px;
+      gap: 16px;
+    }
+
+    .sections {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .section-card {
+      min-height: 116px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcff;
+      padding: 12px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .section-card b {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 8px;
+    }
+
+    .share {
+      display: grid;
+      gap: 9px;
+    }
+
+    .share-status {
+      min-height: 22px;
+      color: var(--green);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      place-items: center;
+      padding: 24px;
+      background: rgba(18, 24, 38, .58);
+      z-index: 20;
+    }
+
+    .overlay.open {
+      display: grid;
+    }
+
+    .preview {
+      width: min(920px, 100%);
+      max-height: min(780px, calc(100vh - 48px));
+      overflow: auto;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 40px 120px rgba(18, 24, 38, .35);
+    }
+
+    .preview-head {
+      padding: 22px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .preview-head h2 {
+      margin: 0;
+      font-size: 24px;
+    }
+
+    .preview-body {
+      padding: 22px;
+      display: grid;
+      gap: 14px;
+      background: #f8fafc;
+    }
+
+    .slide {
+      min-height: 132px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      background: #fff;
+    }
+
+    .slide b {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .slide p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    @media (max-width: 1180px) {
+      .hero,
+      .workbook,
+      .deliverable {
+        grid-template-columns: 1fr;
+      }
+
+      .agent {
+        position: static;
+        max-height: none;
+      }
+    }
+
+    @media (max-width: 820px) {
+      .shell {
+        width: min(100% - 20px, 1440px);
+        padding-top: 10px;
+      }
+
+      .nav,
+      .ask,
+      .analysis-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+
+      .brand {
+        min-width: 0;
+      }
+
+      .catalog,
+      .jobs,
+      .manual-grid,
+      .sections {
+        grid-template-columns: 1fr;
+      }
+
+      .relationship {
+        min-height: 430px;
+      }
+
+      .connector {
+        display: none;
+      }
+
+      .node.one { left: 16px; top: 22px; }
+      .node.two { right: 16px; left: auto; top: 84px; }
+      .node.three { left: 18px; top: 178px; }
+      .node.four { right: 16px; top: 246px; }
+      .node.five { left: 80px; right: auto; bottom: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <nav class="nav" aria-label="Workbook navigation">
+      <div class="brand"><span class="brand-mark"></span><span>Pi Analytics</span></div>
+      <div class="nav-tabs" aria-label="Analysis stages">
+        <span class="active">Intake</span>
+        <span>Catalog</span>
+        <span>Scenario</span>
+        <span>Findings</span>
+        <span>Deliverable</span>
+      </div>
+      <div class="fresh"><span class="dot"></span><span id="freshness">Waiting for folder</span></div>
+    </nav>
+
+    <section class="hero">
+      <section class="card intro">
+        <div class="card-body">
+          <h1>Finance analysis workbook for unknown folders</h1>
+          <p>Point Pi Analytics at a messy data room. The AI reads the files, explains the business meaning, maps relationships, and starts the investigation with tables, charts, and next steps.</p>
+          <div class="drop">
+            <strong>Choose folder or drop data room</strong>
+            <span>Mock intake for finance exports, invoices, contracts, marketing packets, and operations sheets.</span>
+            <div>
+              <button class="primary" id="selectFolder">Choose folder</button>
+              <input class="hidden-input" id="folderInput" type="file" webkitdirectory directory multiple>
+            </div>
+          </div>
+          <div class="progress">
+            <div class="progress-row"><span id="scanState">AI has not started reading</span><span id="scanPercent">0%</span></div>
+            <div class="progress-track"><div class="progress-fill" id="scanFill"></div></div>
+          </div>
+          <div class="jobs" id="jobButtons">
+            <button class="job active" data-job="crime">Find financial crime</button>
+            <button class="job" data-job="cost">Reduce product cost</button>
+            <button class="job" data-job="roi">Calculate ROI</button>
+            <button class="job" data-job="marketing">Identify best marketing channel</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Data catalog and relationship map</h2>
+          <small id="coverage">Awaiting scan</small>
+        </div>
+        <div class="card-body">
+          <div class="catalog" id="catalog"></div>
+          <div class="relationship" aria-label="Relationship map">
+            <div class="connector a"></div>
+            <div class="connector b"></div>
+            <div class="connector c"></div>
+            <div class="connector d"></div>
+            <button class="node one active" data-focus="Suppliers"><b>Suppliers</b><span>Identity, terms, ownership hints</span></button>
+            <button class="node two" data-focus="Spend"><b>Spend</b><span>Payments, invoices, purchase orders</span></button>
+            <button class="node three" data-focus="Approvals"><b>Approvals</b><span>People, roles, exceptions</span></button>
+            <button class="node four" data-focus="Products"><b>Products</b><span>Materials, SKUs, margin drivers</span></button>
+            <button class="node five" data-focus="Channels"><b>Channels</b><span>Spend, pipeline, revenue</span></button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="card agent" aria-label="AI assistant panel">
+        <div class="card-body" style="padding-bottom:0;">
+          <h2>AI analyst</h2>
+          <p id="agentStatus">Ready to read the folder, summarize contents, and suggest the first finance review.</p>
+        </div>
+        <div class="card-body" style="padding-top:0;">
+          <div class="fresh"><span class="dot"></span><span id="assistantFresh">Idle</span></div>
+        </div>
+        <div class="card-body thread" id="thread">
+          <div class="bubble"><small>AI</small>Choose a folder and I will create a catalog, relationship map, first answer, and report outline.</div>
+        </div>
+        <div class="card-body quick-list">
+          <button class="quick" data-prompt="What should the CFO review first?">What should the CFO review first?</button>
+          <button class="quick" data-prompt="Which assumptions change the conclusion most?">Which assumptions matter most?</button>
+          <button class="quick" data-prompt="Turn the current answer into a board-ready summary.">Board-ready summary</button>
+        </div>
+      </aside>
+    </section>
+
+    <section class="workbook">
+      <section class="card">
+        <div class="card-head">
+          <h2>Question, answer, table, chart</h2>
+          <small id="focusLabel">Focus: Suppliers</small>
+        </div>
+        <div class="card-body">
+          <div class="ask">
+            <input id="questionInput" value="Where is the strongest financial impact in this folder?" aria-label="Analyst question">
+            <button class="primary" id="askButton">Ask AI</button>
+          </div>
+          <article class="answer">
+            <h3 id="answerTitle">Waiting for folder</h3>
+            <p id="answerText">After intake, the AI will explain the folder in plain text and update this workbook with evidence, charting, and next suggested work.</p>
+          </article>
+          <div class="analysis-grid">
+            <div>
+              <div class="card-head" style="padding:0 0 8px;border:0;min-height:auto;">
+                <h2>Generated table</h2>
+                <small id="rowCount">0 rows</small>
+              </div>
+              <table aria-label="Generated analysis table">
+                <thead><tr><th>Line of inquiry</th><th>Evidence</th><th>Business value</th></tr></thead>
+                <tbody id="evidenceRows"></tbody>
+              </table>
+            </div>
+            <div>
+              <div class="card-head" style="padding:0 0 8px;border:0;min-height:auto;">
+                <h2>Graph</h2>
+                <small>Click to focus</small>
+              </div>
+              <div class="chart" id="chart"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Scenario analysis</h2>
+          <small>ROI and cost workbook</small>
+        </div>
+        <div class="card-body scenario" id="scenario"></div>
+      </section>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Manual analyst area</h2>
+        <small>Spreadsheet-like notes, filters, assumptions, annotations, saved findings</small>
+      </div>
+      <div class="card-body">
+        <div class="manual-grid">
+          <div class="manual-box"><b>Filters</b><label><input type="checkbox" checked> Material items</label><br><label><input type="checkbox" checked> Recent activity</label><br><label><input type="checkbox"> Exclude approved exceptions</label></div>
+          <div class="manual-box"><b>Assumptions</b>Base case uses current run rate. Upside case assumes contract consolidation and stable demand.</div>
+          <div class="manual-box"><b>Annotation</b><textarea id="annotation">Validate the impact range with finance before sharing.</textarea></div>
+          <div class="manual-box"><b>Saved findings</b><button class="secondary" id="addFinding">Add current finding</button><div class="findings" id="savedFindings"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Polished deliverable builder</h2>
+        <small>Report or presentation, one click away</small>
+      </div>
+      <div class="card-body deliverable">
+        <div class="sections" id="reportSections"></div>
+        <div class="share">
+          <button class="primary" id="previewButton">Preview presentation</button>
+          <button class="secondary" id="shareButton">Host and share</button>
+          <div class="share-status" id="shareStatus"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="overlay" id="previewOverlay" role="dialog" aria-modal="true" aria-label="Presentation preview">
+    <article class="preview">
+      <div class="preview-head">
+        <h2>Presentation preview</h2>
+        <button class="secondary" id="closePreview">Close</button>
+      </div>
+      <div class="preview-body" id="previewBody"></div>
+    </article>
+  </div>
+
+  <script>
+    const catalogEmpty = [
+      ["Data room", "Choose a folder to classify the material.", "Waiting"],
+      ["Business map", "Relationships will appear after reading.", "Waiting"],
+      ["Analysis workbook", "Tables and charts will populate after intake.", "Waiting"]
+    ];
+
+    const catalogReady = [
+      ["Invoice set", "Supplier invoices, purchase references, tax details, and payment timing.", "Finance"],
+      ["Spend ledger", "Spend by supplier, product family, month, and approval owner.", "Cash"],
+      ["Product cost pack", "Materials, freight, warranty, and margin drivers by SKU.", "Cost"],
+      ["Investment cases", "Project spend, benefit forecasts, realized value, and payback dates.", "ROI"],
+      ["Channel results", "Marketing spend, leads, pipeline quality, and closed revenue.", "Growth"]
+    ];
+
+    const jobData = {
+      crime: {
+        label: "Financial crime",
+        title: "Financial crime review",
+        answer: "The folder points to supplier risk, not a broad control failure. New vendors with urgent payments create the clearest review queue, especially where approval ownership and onboarding notes overlap.",
+        rows: [
+          ["Supplier onboarding", "Three vendors paid within ten days of setup", "$418k review queue"],
+          ["Approval pattern", "Same approver appears near onboarding and release", "High review priority"],
+          ["Invoice splitting", "Adjacent invoices sit below review threshold", "$126k exposure"],
+          ["Bank change", "Two changes shortly before payment", "Confirm independently"]
+        ],
+        bars: [["New vendor", 84], ["Urgent pay", 76], ["Split invoice", 58], ["Bank change", 44]],
+        scenario: [["Review queue", "$418k"], ["Expected recovery", "$72k"], ["Review effort", "3 days"], ["Confidence", "High"]],
+        next: ["Confirm supplier ownership", "Trace approval handoffs", "Prepare review queue"],
+        finding: "New vendor urgent payments create the priority financial crime review queue."
+      },
+      cost: {
+        label: "Cost reduction",
+        title: "Cost reduction case",
+        answer: "The strongest cost reduction is supplier consolidation for packaging, followed by fewer expedited shipments. The workbook shows a near-term case without assuming lower demand or product redesign.",
+        rows: [
+          ["Packaging", "Five price points for similar material", "$310k saving"],
+          ["Freight", "Premium shipments caused by late releases", "$185k saving"],
+          ["Resin orders", "Small orders below efficient quantity", "$97k saving"],
+          ["Warranty handling", "Two SKUs drive repeat handling", "$74k saving"]
+        ],
+        bars: [["Packaging", 86], ["Freight", 66], ["Resin", 42], ["Warranty", 31]],
+        scenario: [["Base saving", "$666k"], ["Implementation cost", "$92k"], ["Payback", "2.1 months"], ["Confidence", "Medium high"]],
+        next: ["Group suppliers by material", "Check service impact", "Create savings bridge"],
+        finding: "Packaging consolidation and planned freight windows create the largest cost reduction."
+      },
+      roi: {
+        label: "ROI",
+        title: "ROI ranking",
+        answer: "Field enablement has the best return because revenue appears in existing accounts and payback starts quickly. The brand campaign has weaker conversion evidence and should not receive incremental funding without a new measurement plan.",
+        rows: [
+          ["Field enablement", "Revenue uplift in existing accounts", "4.6x ROI"],
+          ["Partner portal", "Moderate adoption and low support cost", "2.8x ROI"],
+          ["Automation pilot", "Labor benefit delayed by rollout", "1.9x ROI"],
+          ["Brand campaign", "Awareness lift but weak conversion", "0.8x ROI"]
+        ],
+        bars: [["Enablement", 92], ["Partner", 56], ["Automation", 38], ["Brand", 16]],
+        scenario: [["Best ROI", "4.6x"], ["Fastest payback", "5 months"], ["Downside ROI", "2.9x"], ["Confidence", "Medium"]],
+        next: ["Review downside case", "Compare payback timing", "Save ROI ranking"],
+        finding: "Field enablement leads the ROI ranking with 4.6x return."
+      },
+      marketing: {
+        label: "Marketing performance",
+        title: "Marketing channel mix",
+        answer: "Partner webinars generate the best closed revenue per dollar. Paid search still supplies volume, but the workbook recommends moving marginal budget to webinars and retargeting high-intent search visitors.",
+        rows: [
+          ["Partner webinars", "High conversion and larger deal size", "$9.40 per dollar"],
+          ["Retargeting", "Small spend, reliable conversion", "$6.10 per dollar"],
+          ["Paid search", "High lead volume, mixed quality", "$4.80 per dollar"],
+          ["Field events", "Large deals but slow payback", "$3.20 per dollar"]
+        ],
+        bars: [["Webinars", 94], ["Retarget", 61], ["Search", 48], ["Events", 32]],
+        scenario: [["Budget shift", "$240k"], ["Expected lift", "$1.1M"], ["Payback", "Quarter 2"], ["Confidence", "High"]],
+        next: ["Segment deal size", "Check channel overlap", "Build budget slide"],
+        finding: "Partner webinars should receive incremental marketing budget."
+      }
+    };
+
+    const state = {
+      scanned: false,
+      job: "crime",
+      focus: "Suppliers",
+      findings: []
+    };
+
+    const els = {
+      selectFolder: document.getElementById("selectFolder"),
+      folderInput: document.getElementById("folderInput"),
+      scanState: document.getElementById("scanState"),
+      scanPercent: document.getElementById("scanPercent"),
+      scanFill: document.getElementById("scanFill"),
+      freshness: document.getElementById("freshness"),
+      assistantFresh: document.getElementById("assistantFresh"),
+      agentStatus: document.getElementById("agentStatus"),
+      coverage: document.getElementById("coverage"),
+      catalog: document.getElementById("catalog"),
+      focusLabel: document.getElementById("focusLabel"),
+      questionInput: document.getElementById("questionInput"),
+      askButton: document.getElementById("askButton"),
+      answerTitle: document.getElementById("answerTitle"),
+      answerText: document.getElementById("answerText"),
+      evidenceRows: document.getElementById("evidenceRows"),
+      rowCount: document.getElementById("rowCount"),
+      chart: document.getElementById("chart"),
+      scenario: document.getElementById("scenario"),
+      annotation: document.getElementById("annotation"),
+      savedFindings: document.getElementById("savedFindings"),
+      addFinding: document.getElementById("addFinding"),
+      reportSections: document.getElementById("reportSections"),
+      previewButton: document.getElementById("previewButton"),
+      shareButton: document.getElementById("shareButton"),
+      shareStatus: document.getElementById("shareStatus"),
+      previewOverlay: document.getElementById("previewOverlay"),
+      previewBody: document.getElementById("previewBody"),
+      closePreview: document.getElementById("closePreview"),
+      thread: document.getElementById("thread")
+    };
+
+    function renderCatalog(items) {
+      els.catalog.innerHTML = items.map(item => `
+        <article class="file-card">
+          <div><b>${item[0]}</b><p>${item[1]}</p></div>
+          <span class="pill">${item[2]}</span>
+        </article>
+      `).join("");
+    }
+
+    function addThread(who, text) {
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      bubble.innerHTML = `<small>${who}</small>${text}`;
+      els.thread.appendChild(bubble);
+      els.thread.scrollTop = els.thread.scrollHeight;
+    }
+
+    function renderJob() {
+      const data = jobData[state.job];
+      els.answerTitle.textContent = state.scanned ? data.title : "Waiting for folder";
+      els.answerText.textContent = state.scanned ? data.answer : "After intake, the AI will explain the folder in plain text and update this workbook with evidence, charting, and next suggested work.";
+      els.evidenceRows.innerHTML = (state.scanned ? data.rows : []).map(row => `
+        <tr><td>${row[0]}</td><td>${row[1]}</td><td>${row[2]}</td></tr>
+      `).join("");
+      els.rowCount.textContent = state.scanned ? `${data.rows.length} rows` : "0 rows";
+      els.chart.innerHTML = (state.scanned ? data.bars : []).map(bar => `
+        <div class="bar-row">
+          <span>${bar[0]}</span>
+          <div class="bar-track"><button class="bar" style="--w:${bar[1]}%" data-focus="${bar[0]}">${bar[0]}</button></div>
+          <b>${bar[1]}</b>
+        </div>
+      `).join("");
+      els.scenario.innerHTML = (state.scanned ? data.scenario : [["Status", "Awaiting folder"], ["Catalog", "Pending"], ["Chart", "Pending"], ["Report", "Draft"]]).map(row => `
+        <div class="scenario-row"><span>${row[0]}</span><output>${row[1]}</output></div>
+      `).join("");
+      document.querySelectorAll(".job").forEach(button => button.classList.toggle("active", button.dataset.job === state.job));
+      renderReport();
+    }
+
+    function renderFindings() {
+      els.savedFindings.innerHTML = state.findings.map(item => `<span class="finding">${item}</span>`).join("");
+    }
+
+    function renderReport() {
+      const data = jobData[state.job];
+      const sections = [
+        ["Situation", state.scanned ? "Unknown folder was classified into finance, cost, ROI, and growth material." : "Awaiting intake."],
+        ["Answer", state.scanned ? data.title : "First answer pending."],
+        ["Evidence", state.scanned ? `${data.rows.length} supporting rows and chart signals.` : "Evidence pending."],
+        ["Recommendation", state.findings.length ? state.findings.join(" ") : "Save a finding to complete this section."]
+      ];
+      els.reportSections.innerHTML = sections.map(section => `
+        <article class="section-card"><b>${section[0]}</b>${section[1]}</article>
+      `).join("");
+    }
+
+    function startScan() {
+      state.scanned = false;
+      els.freshness.textContent = "Reading now";
+      els.assistantFresh.textContent = "Reading now";
+      els.agentStatus.textContent = "Reading and grouping business material.";
+      els.scanState.textContent = "AI reading files";
+      els.scanPercent.textContent = "7%";
+      els.scanFill.style.width = "7%";
+      els.coverage.textContent = "Sampling data room";
+      renderCatalog(catalogEmpty);
+      addThread("AI", "I see finance, product cost, investment case, and marketing material. I am preparing a business catalog.");
+
+      const steps = [
+        [31, "Classifying business documents", "Catalog building"],
+        [57, "Finding relationships", "Map building"],
+        [83, "Preparing finance workbook", "Workbook ready soon"],
+        [100, "Summary ready", "5 groups, 18 relationships"]
+      ];
+      let index = 0;
+      const timer = setInterval(() => {
+        const step = steps[index];
+        els.scanState.textContent = step[1];
+        els.coverage.textContent = step[2];
+        els.scanPercent.textContent = `${step[0]}%`;
+        els.scanFill.style.width = `${step[0]}%`;
+        if (step[0] === 100) {
+          clearInterval(timer);
+          state.scanned = true;
+          els.freshness.textContent = "Fresh 2 minutes ago";
+          els.assistantFresh.textContent = "Ready for follow-up";
+          els.agentStatus.textContent = "Catalog, relationship map, first answer, and report outline are ready.";
+          renderCatalog(catalogReady);
+          renderJob();
+          addThread("AI", "The folder is ready. I found review queues for financial crime, savings, ROI, and marketing performance.");
+        }
+        index += 1;
+      }, 520);
+    }
+
+    function askQuestion(prompt) {
+      const question = prompt || els.questionInput.value.trim();
+      if (!question) return;
+      if (!state.scanned) startScan();
+      const data = jobData[state.job];
+      els.answerTitle.textContent = `${data.label}: workbook answer`;
+      els.answerText.textContent = `${data.answer} Current focus: ${state.focus}. Question asked: "${question}"`;
+      addThread("Analyst", question);
+      addThread("AI", `${data.next[0]}. ${data.next[1]}. I can add the result to the deliverable when ready.`);
+    }
+
+    function setFocus(label) {
+      state.focus = label;
+      els.focusLabel.textContent = `Focus: ${label}`;
+      document.querySelectorAll(".node").forEach(node => node.classList.toggle("active", node.dataset.focus === label));
+      if (state.scanned) {
+        els.answerText.textContent = `${jobData[state.job].answer} Focused on ${label}.`;
+        addThread("AI", `Focused the workbook on ${label}.`);
+      }
+    }
+
+    function addFinding() {
+      const finding = jobData[state.job].finding;
+      if (!state.findings.includes(finding)) state.findings.push(finding);
+      renderFindings();
+      renderReport();
+      addThread("AI", "Added the current finding to the presentation outline.");
+    }
+
+    function preview() {
+      const data = jobData[state.job];
+      const saved = state.findings.length ? state.findings.join(" ") : data.finding;
+      els.previewBody.innerHTML = `
+        <section class="slide"><b>1. Executive summary</b><p>${state.scanned ? data.answer : "Presentation will populate after intake."}</p></section>
+        <section class="slide"><b>2. Folder understood</b><p>Pi Analytics grouped finance, cost, ROI, and marketing material into a business catalog and relationship map.</p></section>
+        <section class="slide"><b>3. Scenario result</b><p>${data.scenario.map(row => `${row[0]}: ${row[1]}`).join(". ")}.</p></section>
+        <section class="slide"><b>4. Recommendation</b><p>${saved}</p></section>
+      `;
+      els.previewOverlay.classList.add("open");
+    }
+
+    function share() {
+      els.shareStatus.textContent = "Hosted presentation ready: pi.analytics/share/finance-workbook";
+      addThread("AI", "The presentation is hosted and ready to share.");
+    }
+
+    els.selectFolder.addEventListener("click", () => {
+      els.folderInput.click();
+      startScan();
+    });
+    els.folderInput.addEventListener("change", startScan);
+    document.querySelectorAll(".job").forEach(button => {
+      button.addEventListener("click", () => {
+        state.job = button.dataset.job;
+        renderJob();
+        addThread("AI", `Switched workbook to ${jobData[state.job].label}.`);
+      });
+    });
+    document.querySelectorAll(".node").forEach(node => node.addEventListener("click", () => setFocus(node.dataset.focus)));
+    els.chart.addEventListener("click", event => {
+      const bar = event.target.closest(".bar");
+      if (bar) setFocus(bar.dataset.focus);
+    });
+    els.askButton.addEventListener("click", () => askQuestion());
+    els.questionInput.addEventListener("keydown", event => {
+      if (event.key === "Enter") askQuestion();
+    });
+    document.querySelectorAll(".quick").forEach(button => {
+      button.addEventListener("click", () => {
+        els.questionInput.value = button.dataset.prompt;
+        askQuestion(button.dataset.prompt);
+      });
+    });
+    els.addFinding.addEventListener("click", addFinding);
+    els.annotation.addEventListener("input", renderReport);
+    els.previewButton.addEventListener("click", preview);
+    els.shareButton.addEventListener("click", share);
+    els.closePreview.addEventListener("click", () => els.previewOverlay.classList.remove("open"));
+    els.previewOverlay.addEventListener("click", event => {
+      if (event.target === els.previewOverlay) els.previewOverlay.classList.remove("open");
+    });
+
+    renderCatalog(catalogEmpty);
+    renderJob();
+    renderReport();
+  </script>
+</body>
+</html>

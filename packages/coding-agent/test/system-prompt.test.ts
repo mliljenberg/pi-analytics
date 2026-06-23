@@ -86,6 +86,105 @@ describe("buildSystemPrompt", () => {
 		});
 	});
 
+	describe("analytics workflows", () => {
+		test("includes analytics identity in default prompt", () => {
+			const prompt = buildSystemPrompt({
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("data analyst");
+			expect(prompt).toContain("analytics engineer");
+			expect(prompt).toContain("DuckDB CLI");
+			expect(prompt).toContain("Python");
+			expect(prompt).toContain("CSV, JSON, Parquet, or DuckDB databases");
+		});
+
+		test("includes analytics workflow guidance with DuckDB", () => {
+			const prompt = buildSystemPrompt({
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("duckdb -csv");
+			expect(prompt).toContain("no custom analytics tools");
+			expect(prompt).toContain("Default to DuckDB for data analysis");
+		});
+
+		test("includes artifact convention guidance", () => {
+			const prompt = buildSystemPrompt({
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("queries/<name>.sql");
+			expect(prompt).toContain("output/<name>.csv");
+			expect(prompt).toContain("scripts/<name>.py");
+			expect(prompt).toContain("reports/<name>.html");
+		});
+
+		test("includes report generation guidance", () => {
+			const prompt = buildSystemPrompt({
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("xdg-open");
+			expect(prompt).toContain("No server is needed");
+			expect(prompt).toContain("self-contained HTML");
+			expect(prompt).toContain("dark-themed");
+		});
+
+		test("includes validation and error handling guidance", () => {
+			const prompt = buildSystemPrompt({
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("Check command failures");
+			expect(prompt).toContain("Validate evidence");
+			expect(prompt).toContain("Preserve source data");
+		});
+
+		test("defaults to DuckDB while allowing more suitable tools", () => {
+			const prompt = buildSystemPrompt({
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("Start with SQL in DuckDB");
+			expect(prompt).toContain("only when it is more suitable than DuckDB");
+			expect(prompt).toContain("Use Python after DuckDB");
+		});
+
+		test("warns about large result handling", () => {
+			const prompt = buildSystemPrompt({
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("Send large results to CSV/JSON");
+			expect(prompt).toContain("Read samples or summaries");
+		});
+
+		test("graceful empty/error report states mentioned", () => {
+			const prompt = buildSystemPrompt({
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("graceful empty/error states");
+		});
+	});
+
 	describe("prompt guidelines", () => {
 		test("appends promptGuidelines to default guidelines", () => {
 			const prompt = buildSystemPrompt({

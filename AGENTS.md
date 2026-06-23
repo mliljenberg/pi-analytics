@@ -44,7 +44,7 @@
 
 ## Git/JJ
 
-jj is used for local changes make sure to use it propperly.
+jj is used for local changes make sure to use it properly. Use jj describe and jj new for each new feature you create. The goal is to make the changes readable for a human. Better to use it to often than to seldom.
 
 Multiple pi sessions may be running in this cwd at the same time, each modifying different files. Git operations that touch unstaged, staged, or untracked files outside your own changes will stomp on other sessions' work. Follow these rules:
 

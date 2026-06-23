@@ -1,0 +1,1272 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Apple Guided Investigation Flow</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f5f7;
+      --paper: #ffffff;
+      --ink: #101114;
+      --muted: #6e7380;
+      --line: #dedfe3;
+      --blue: #0a84ff;
+      --green: #2ea66a;
+      --orange: #c96c1b;
+      --red: #c94c44;
+      --violet: #7d5cff;
+      --shadow: 0 22px 70px rgba(10, 12, 16, .12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+      background:
+        linear-gradient(180deg, #ffffff 0, var(--bg) 360px),
+        var(--bg);
+      color: var(--ink);
+    }
+
+    button,
+    input,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .shell {
+      width: min(1360px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 22px 0 44px;
+    }
+
+    .top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 10px 0 20px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 760;
+      letter-spacing: 0;
+    }
+
+    .brand-mark {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background:
+        linear-gradient(135deg, rgba(10, 132, 255, .95), rgba(125, 92, 255, .95)),
+        #111;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .42);
+    }
+
+    .fresh {
+      min-height: 34px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, .76);
+      border-radius: 999px;
+      padding: 0 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 5px rgba(46, 166, 106, .13);
+    }
+
+    .hero {
+      min-height: 250px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(280px, .9fr);
+      gap: 28px;
+      align-items: end;
+      padding: 28px 0 24px;
+    }
+
+    .hero h1 {
+      margin: 0;
+      max-width: 760px;
+      font-size: clamp(44px, 8vw, 96px);
+      line-height: .9;
+      letter-spacing: 0;
+    }
+
+    .hero p {
+      margin: 16px 0 0;
+      max-width: 620px;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.46;
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .step {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .78);
+      min-height: 104px;
+      padding: 14px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .step b {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 7px;
+      font-size: 14px;
+    }
+
+    .step.active {
+      border-color: rgba(10, 132, 255, .42);
+      background: #f0f7ff;
+      box-shadow: 0 18px 50px rgba(10, 132, 255, .12);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 344px;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .workspace {
+      display: grid;
+      gap: 16px;
+    }
+
+    .panel {
+      background: rgba(255, 255, 255, .86);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      min-height: 52px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      font-size: 15px;
+      letter-spacing: 0;
+    }
+
+    .panel-head small {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .panel-body {
+      padding: 16px;
+    }
+
+    .connect-grid {
+      display: grid;
+      grid-template-columns: minmax(280px, .86fr) minmax(0, 1.14fr);
+      gap: 16px;
+    }
+
+    .drop {
+      min-height: 226px;
+      border: 1px dashed #bfc3cc;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 24px;
+      background:
+        radial-gradient(circle at 50% 0, rgba(10, 132, 255, .12), transparent 48%),
+        #fbfbfd;
+    }
+
+    .drop strong {
+      display: block;
+      font-size: 24px;
+      margin-bottom: 8px;
+    }
+
+    .drop p {
+      color: var(--muted);
+      margin: 0 0 16px;
+      line-height: 1.45;
+      font-size: 14px;
+    }
+
+    .primary,
+    .secondary,
+    .job,
+    .quick {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 999px;
+      min-height: 40px;
+      padding: 0 16px;
+    }
+
+    .primary {
+      border: 0;
+      color: #fff;
+      font-weight: 760;
+      background: #111114;
+    }
+
+    .secondary:hover,
+    .job:hover,
+    .quick:hover {
+      border-color: #b7bbc5;
+      background: #f9f9fb;
+    }
+
+    .hidden-input {
+      display: none;
+    }
+
+    .reading {
+      display: grid;
+      align-content: center;
+      gap: 14px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      padding: 18px;
+      background: #fff;
+      min-height: 226px;
+    }
+
+    .reading h3 {
+      margin: 0;
+      font-size: 22px;
+    }
+
+    .reading p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .progress-line {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .track {
+      height: 8px;
+      border-radius: 999px;
+      background: #e7e8ec;
+      overflow: hidden;
+    }
+
+    .fill {
+      width: 5%;
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--blue), var(--violet));
+      transition: width .35s ease;
+    }
+
+    .jobs {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .job {
+      border-radius: 8px;
+      text-align: left;
+      min-height: 72px;
+      color: var(--muted);
+      padding: 12px;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .job.active {
+      border-color: rgba(10, 132, 255, .38);
+      background: #eef6ff;
+      color: #005ebd;
+      font-weight: 760;
+    }
+
+    .understand {
+      display: grid;
+      grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr);
+      gap: 16px;
+    }
+
+    .inventory {
+      display: grid;
+      gap: 10px;
+    }
+
+    .inv-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fbfbfd;
+      min-height: 92px;
+    }
+
+    .inv-card b {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+
+    .inv-card span {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.43;
+    }
+
+    .badge {
+      min-height: 22px;
+      padding: 0 8px;
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      background: #eef6ff;
+      color: #0066cc;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .map {
+      min-height: 386px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      position: relative;
+      overflow: hidden;
+      background:
+        linear-gradient(90deg, rgba(16, 17, 20, .04) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(16, 17, 20, .04) 1px, transparent 1px),
+        #fbfbfd;
+      background-size: 28px 28px;
+    }
+
+    .link {
+      position: absolute;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, rgba(10, 132, 255, .70), transparent);
+      transform-origin: left center;
+    }
+
+    .link.a { width: 188px; left: 86px; top: 115px; transform: rotate(8deg); }
+    .link.b { width: 220px; left: 104px; top: 245px; transform: rotate(-24deg); background: linear-gradient(90deg, transparent, rgba(125, 92, 255, .68), transparent); }
+    .link.c { width: 168px; left: 310px; top: 133px; transform: rotate(46deg); background: linear-gradient(90deg, transparent, rgba(46, 166, 106, .72), transparent); }
+    .link.d { width: 160px; left: 328px; top: 260px; transform: rotate(-38deg); background: linear-gradient(90deg, transparent, rgba(201, 108, 27, .72), transparent); }
+
+    .node {
+      width: 132px;
+      min-height: 66px;
+      position: absolute;
+      border: 1px solid #d7d9df;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .94);
+      color: var(--ink);
+      text-align: left;
+      padding: 11px;
+      box-shadow: 0 18px 42px rgba(10, 12, 16, .10);
+    }
+
+    .node:hover,
+    .node.active {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 4px rgba(10, 132, 255, .12), 0 18px 42px rgba(10, 12, 16, .14);
+    }
+
+    .node b {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .node span {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+    }
+
+    .node.one { left: 22px; top: 88px; }
+    .node.two { left: 268px; top: 72px; }
+    .node.three { left: 286px; top: 238px; }
+    .node.four { right: 26px; top: 110px; }
+    .node.five { right: 46px; bottom: 34px; }
+
+    .investigate {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(310px, .44fr);
+      gap: 16px;
+    }
+
+    .ask {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+    }
+
+    .ask input,
+    textarea {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      padding: 0 15px;
+      color: var(--ink);
+      outline: none;
+    }
+
+    textarea {
+      border-radius: 8px;
+      min-height: 76px;
+      resize: vertical;
+      padding: 10px;
+    }
+
+    .ask input:focus,
+    textarea:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 4px rgba(10, 132, 255, .12);
+    }
+
+    .answer {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      background: #fbfbfd;
+      border-radius: 8px;
+      padding: 15px;
+      min-height: 118px;
+    }
+
+    .answer h3 {
+      margin: 0 0 8px;
+      font-size: 20px;
+    }
+
+    .answer p {
+      margin: 0;
+      color: #4f5561;
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    .evidence-grid {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(260px, .85fr);
+      gap: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+    }
+
+    tbody tr:hover td {
+      background: #f7f7fa;
+    }
+
+    .chart {
+      display: grid;
+      gap: 10px;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 88px minmax(0, 1fr) 38px;
+      gap: 8px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .bar-track {
+      height: 24px;
+      border-radius: 999px;
+      background: #e9eaee;
+      overflow: hidden;
+    }
+
+    .bar {
+      display: block;
+      height: 100%;
+      width: var(--w);
+      border: 0;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--blue), var(--violet));
+      color: transparent;
+    }
+
+    .manual {
+      display: grid;
+      gap: 10px;
+    }
+
+    .manual-box {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fbfbfd;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .manual-box b {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 8px;
+    }
+
+    .findings {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .finding {
+      border: 1px solid rgba(46, 166, 106, .25);
+      background: #edf9f3;
+      color: #177245;
+      border-radius: 999px;
+      padding: 6px 9px;
+      font-size: 12px;
+    }
+
+    .present {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr)) 260px;
+      gap: 10px;
+    }
+
+    .report-card {
+      min-height: 126px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfbfd;
+      padding: 13px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .report-card b {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 8px;
+    }
+
+    .share-box {
+      display: grid;
+      gap: 9px;
+      align-content: start;
+    }
+
+    .share-status {
+      min-height: 22px;
+      color: var(--green);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .agent {
+      position: sticky;
+      top: 18px;
+      display: grid;
+      grid-template-rows: auto auto minmax(330px, 1fr) auto;
+      gap: 12px;
+    }
+
+    .agent-title h2 {
+      margin: 0;
+      font-size: 20px;
+    }
+
+    .agent-title p {
+      color: var(--muted);
+      margin: 7px 0 0;
+      line-height: 1.45;
+      font-size: 13px;
+    }
+
+    .thread {
+      overflow: auto;
+      display: grid;
+      align-content: start;
+      gap: 9px;
+    }
+
+    .bubble {
+      border: 1px solid var(--line);
+      background: #fbfbfd;
+      border-radius: 8px;
+      padding: 10px;
+      color: #4f5561;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .bubble small {
+      display: block;
+      color: var(--blue);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      font-size: 11px;
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+
+    .quick-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .quick {
+      border-radius: 8px;
+      text-align: left;
+      font-size: 12px;
+      min-height: 42px;
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      place-items: center;
+      padding: 24px;
+      background: rgba(0, 0, 0, .42);
+      z-index: 30;
+    }
+
+    .overlay.open {
+      display: grid;
+    }
+
+    .preview {
+      width: min(900px, 100%);
+      max-height: min(780px, calc(100vh - 48px));
+      overflow: auto;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 44px 120px rgba(0, 0, 0, .28);
+    }
+
+    .preview-head {
+      padding: 22px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .preview-head h2 {
+      margin: 0;
+      font-size: 26px;
+    }
+
+    .preview-body {
+      display: grid;
+      gap: 14px;
+      padding: 22px;
+      background: #f5f5f7;
+    }
+
+    .slide {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 20px;
+      min-height: 130px;
+    }
+
+    .slide b {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .slide p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    @media (max-width: 1160px) {
+      .layout,
+      .hero,
+      .connect-grid,
+      .understand,
+      .investigate {
+        grid-template-columns: 1fr;
+      }
+
+      .agent {
+        position: static;
+      }
+
+      .present {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      .shell {
+        width: min(100% - 22px, 1360px);
+        padding-top: 12px;
+      }
+
+      .top,
+      .ask,
+      .evidence-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+
+      .steps,
+      .jobs,
+      .present {
+        grid-template-columns: 1fr;
+      }
+
+      .hero h1 {
+        font-size: 48px;
+      }
+
+      .map {
+        min-height: 444px;
+      }
+
+      .link {
+        display: none;
+      }
+
+      .node.one { left: 16px; top: 22px; }
+      .node.two { right: 16px; left: auto; top: 92px; }
+      .node.three { left: 16px; top: 190px; }
+      .node.four { right: 16px; top: 268px; }
+      .node.five { left: 70px; right: auto; bottom: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="top">
+      <div class="brand"><span class="brand-mark"></span><span>Pi Analytics</span></div>
+      <div class="fresh"><span class="dot"></span><span id="freshness">Waiting for folder</span></div>
+    </header>
+
+    <section class="hero">
+      <div>
+        <h1>Connect. Understand. Investigate. Present.</h1>
+        <p>A guided workbench for analysts who start with unknown folders and need a clear answer, evidence, and a finished deliverable.</p>
+      </div>
+      <div class="steps" aria-label="Guided flow">
+        <div class="step active"><b>Connect folder</b>Choose or drop the data room.</div>
+        <div class="step"><b>Understand data</b>Read, classify, and map relationships.</div>
+        <div class="step"><b>Investigate</b>Ask, filter, annotate, and save findings.</div>
+        <div class="step"><b>Present</b>Create a hosted report or presentation.</div>
+      </div>
+    </section>
+
+    <div class="layout">
+      <div class="workspace">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Connect folder</h2>
+            <small id="scanLabel">Not started</small>
+          </div>
+          <div class="panel-body connect-grid">
+            <div class="drop">
+              <div>
+                <strong>Drop folder</strong>
+                <p>Mock intake for unknown finance, operations, marketing, and document files.</p>
+                <button class="primary" id="selectFolder">Choose folder</button>
+                <input class="hidden-input" id="folderInput" type="file" webkitdirectory directory multiple>
+              </div>
+            </div>
+            <div class="reading">
+              <h3 id="readTitle">AI reading state</h3>
+              <p id="readText">The AI will show progress, freshness, and the first interpretation of the folder.</p>
+              <div>
+                <div class="progress-line"><span id="scanState">AI has not started reading</span><span id="scanPercent">0%</span></div>
+                <div class="track"><div class="fill" id="scanFill"></div></div>
+              </div>
+              <div class="jobs">
+                <button class="job active" data-job="crime">Find financial crime</button>
+                <button class="job" data-job="cost">Reduce product cost</button>
+                <button class="job" data-job="roi">Calculate ROI</button>
+                <button class="job" data-job="marketing">Identify best marketing channel</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Understand data</h2>
+            <small id="coverage">Awaiting scan</small>
+          </div>
+          <div class="panel-body understand">
+            <div class="inventory" id="inventory"></div>
+            <div class="map" aria-label="Relationship diagram">
+              <div class="link a"></div>
+              <div class="link b"></div>
+              <div class="link c"></div>
+              <div class="link d"></div>
+              <button class="node one active" data-focus="Suppliers"><b>Suppliers</b><span>Vendor identity and terms</span></button>
+              <button class="node two" data-focus="Payments"><b>Payments</b><span>Cash movement and timing</span></button>
+              <button class="node three" data-focus="Approvals"><b>Approvals</b><span>People and exceptions</span></button>
+              <button class="node four" data-focus="Products"><b>Products</b><span>SKU, margin, and cost drivers</span></button>
+              <button class="node five" data-focus="Channels"><b>Channels</b><span>Spend, leads, and revenue</span></button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Investigate</h2>
+            <small id="focusLabel">Focus: Suppliers</small>
+          </div>
+          <div class="panel-body investigate">
+            <div>
+              <div class="ask">
+                <input id="questionInput" value="Explain the strongest finding in plain language." aria-label="Analyst question">
+                <button class="primary" id="askButton">Ask AI</button>
+              </div>
+              <article class="answer">
+                <h3 id="answerTitle">Waiting for first read</h3>
+                <p id="answerText">Choose a folder to generate the first narrative answer, evidence table, and chart.</p>
+              </article>
+              <div class="evidence-grid">
+                <div>
+                  <div class="panel-head" style="padding:0 0 8px;border:0;min-height:auto;">
+                    <h2>Generated table</h2>
+                    <small id="rowCount">0 rows</small>
+                  </div>
+                  <table aria-label="Generated table">
+                    <thead><tr><th>Item</th><th>Why it matters</th><th>Value</th></tr></thead>
+                    <tbody id="evidenceRows"></tbody>
+                  </table>
+                </div>
+                <div>
+                  <div class="panel-head" style="padding:0 0 8px;border:0;min-height:auto;">
+                    <h2>Graph</h2>
+                    <small>Click a bar</small>
+                  </div>
+                  <div class="chart" id="chart"></div>
+                </div>
+              </div>
+            </div>
+
+            <aside class="manual">
+              <div class="manual-box"><b>Filters</b><label><input type="checkbox" checked> High impact</label><br><label><input type="checkbox" checked> Recent activity</label><br><label><input type="checkbox"> Saved only</label></div>
+              <div class="manual-box"><b>Assumptions</b>Use conservative impact until finance confirms exception handling.</div>
+              <div class="manual-box"><b>Annotation</b><textarea id="annotation">Keep the conclusion readable for non-specialist stakeholders.</textarea></div>
+              <div class="manual-box"><b>Saved findings</b><button class="secondary" id="addFinding">Add finding</button><div class="findings" id="savedFindings"></div></div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Present</h2>
+            <small>Report and presentation builder</small>
+          </div>
+          <div class="panel-body present">
+            <div class="report-card"><b>1. Summary</b><span id="reportSummary">Awaiting first answer.</span></div>
+            <div class="report-card"><b>2. What the data contains</b><span id="reportData">Inventory and relationship map will populate after intake.</span></div>
+            <div class="report-card"><b>3. Evidence</b><span id="reportEvidence">Tables and chart signals will be included.</span></div>
+            <div class="report-card"><b>4. Recommendation</b><span id="reportRecommendation">Save findings to complete this section.</span></div>
+            <div class="share-box">
+              <button class="primary" id="previewButton">Preview presentation</button>
+              <button class="secondary" id="shareButton">Host and share</button>
+              <div class="share-status" id="shareStatus"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <aside class="panel agent" aria-label="Always-visible AI assistant">
+        <div class="panel-body agent-title">
+          <h2>AI analyst</h2>
+          <p id="agentStatus">I will stay with the investigation from intake to hosted presentation.</p>
+        </div>
+        <div class="panel-body" style="padding-top:0;">
+          <div class="fresh"><span class="dot"></span><span id="assistantFresh">Idle</span></div>
+        </div>
+        <div class="panel-body thread" id="thread">
+          <div class="bubble"><small>AI</small>Choose a folder and I will explain the material, map relationships, and propose first questions.</div>
+        </div>
+        <div class="panel-body quick-list">
+          <button class="quick" data-prompt="What should I investigate first?">What should I investigate first?</button>
+          <button class="quick" data-prompt="Show the evidence behind the answer.">Show evidence behind answer</button>
+          <button class="quick" data-prompt="Draft the final recommendation.">Draft final recommendation</button>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <div class="overlay" id="previewOverlay" role="dialog" aria-modal="true" aria-label="Presentation preview">
+    <article class="preview">
+      <div class="preview-head">
+        <h2>Presentation preview</h2>
+        <button class="secondary" id="closePreview">Close</button>
+      </div>
+      <div class="preview-body" id="previewBody"></div>
+    </article>
+  </div>
+
+  <script>
+    const emptyInventory = [
+      ["Unknown folder", "Choose a folder to begin understanding the files.", "Waiting"],
+      ["Inventory", "Business descriptions will appear here.", "Waiting"],
+      ["Relationships", "A map will connect files, entities, and findings.", "Waiting"]
+    ];
+
+    const readyInventory = [
+      ["Supplier and payments", "Vendor identities, bank changes, invoices, payment timing, and approval owners.", "Finance"],
+      ["Product cost material", "SKUs, bills of material, freight, warranty handling, and margin changes.", "Operations"],
+      ["Investment cases", "Project spend, benefit estimates, realized value, and payback timing.", "ROI"],
+      ["Marketing results", "Spend, leads, pipeline quality, channel attribution, and closed revenue.", "Growth"],
+      ["Supporting documents", "Contracts, notes, exception memos, and final close packs.", "Documents"]
+    ];
+
+    const jobData = {
+      crime: {
+        label: "Financial crime",
+        title: "Financial crime finding",
+        answer: "The most important finding is a short list of new suppliers with urgent payments and overlapping approval activity. The pattern is narrow enough for immediate review and large enough to matter.",
+        rows: [
+          ["New suppliers", "Paid within ten days of onboarding", "$418k exposure"],
+          ["Approver overlap", "Same names appear near setup and release", "High priority"],
+          ["Invoice splits", "Amounts just under review level", "$126k exposure"],
+          ["Bank changes", "Changes occurred close to payment date", "Needs confirmation"]
+        ],
+        bars: [["Urgent pay", 88], ["New supplier", 76], ["Split invoice", 58], ["Bank change", 46]],
+        finding: "Review new suppliers with urgent payments and approval overlap before closing the case.",
+        recommendation: "Open a focused supplier review queue and verify ownership, bank changes, and approval handoffs."
+      },
+      cost: {
+        label: "Cost reduction",
+        title: "Cost reduction finding",
+        answer: "The strongest cost reduction is practical: consolidate packaging purchases and reduce expedited freight. The opportunity does not depend on lowering demand or changing the product design.",
+        rows: [
+          ["Packaging", "Same material bought at five price points", "$310k saving"],
+          ["Freight", "Late release creates premium shipments", "$185k saving"],
+          ["Resin", "Small orders below efficient quantity", "$97k saving"],
+          ["Warranty", "Two SKUs drive repeat handling", "$74k saving"]
+        ],
+        bars: [["Packaging", 86], ["Freight", 66], ["Resin", 42], ["Warranty", 31]],
+        finding: "Packaging consolidation and planned freight windows create the largest near-term cost reduction.",
+        recommendation: "Negotiate common packaging terms and move replenishment into planned shipping windows."
+      },
+      roi: {
+        label: "ROI",
+        title: "ROI finding",
+        answer: "Field enablement shows the strongest ROI because benefits appear in existing accounts and payback begins quickly. Brand spend needs better measurement before more budget is added.",
+        rows: [
+          ["Field enablement", "Revenue uplift in existing accounts", "4.6x ROI"],
+          ["Partner portal", "Moderate adoption and low ongoing cost", "2.8x ROI"],
+          ["Automation pilot", "Savings delayed by rollout", "1.9x ROI"],
+          ["Brand campaign", "Weak conversion evidence", "0.8x ROI"]
+        ],
+        bars: [["Enablement", 92], ["Partner", 56], ["Automation", 38], ["Brand", 16]],
+        finding: "Field enablement leads the ROI ranking with 4.6x return and fastest payback.",
+        recommendation: "Fund field enablement first and require stronger measurement for brand spend."
+      },
+      marketing: {
+        label: "Marketing performance",
+        title: "Marketing performance finding",
+        answer: "Partner webinars are the best channel by revenue per dollar. Paid search supplies volume, but the next dollar should move to webinars and high-intent retargeting.",
+        rows: [
+          ["Partner webinars", "High conversion and larger deal size", "$9.40 per dollar"],
+          ["Retargeting", "Reliable conversion with modest spend", "$6.10 per dollar"],
+          ["Paid search", "High volume, mixed quality", "$4.80 per dollar"],
+          ["Field events", "Large deals but slow payback", "$3.20 per dollar"]
+        ],
+        bars: [["Webinars", 94], ["Retarget", 61], ["Search", 48], ["Events", 32]],
+        finding: "Partner webinars outperform other channels on closed revenue per dollar.",
+        recommendation: "Shift incremental budget to partner webinars and retargeting."
+      }
+    };
+
+    const state = {
+      scanned: false,
+      job: "crime",
+      focus: "Suppliers",
+      findings: []
+    };
+
+    const els = {
+      selectFolder: document.getElementById("selectFolder"),
+      folderInput: document.getElementById("folderInput"),
+      scanLabel: document.getElementById("scanLabel"),
+      scanState: document.getElementById("scanState"),
+      scanPercent: document.getElementById("scanPercent"),
+      scanFill: document.getElementById("scanFill"),
+      freshness: document.getElementById("freshness"),
+      assistantFresh: document.getElementById("assistantFresh"),
+      readTitle: document.getElementById("readTitle"),
+      readText: document.getElementById("readText"),
+      coverage: document.getElementById("coverage"),
+      inventory: document.getElementById("inventory"),
+      focusLabel: document.getElementById("focusLabel"),
+      questionInput: document.getElementById("questionInput"),
+      askButton: document.getElementById("askButton"),
+      answerTitle: document.getElementById("answerTitle"),
+      answerText: document.getElementById("answerText"),
+      evidenceRows: document.getElementById("evidenceRows"),
+      rowCount: document.getElementById("rowCount"),
+      chart: document.getElementById("chart"),
+      annotation: document.getElementById("annotation"),
+      addFinding: document.getElementById("addFinding"),
+      savedFindings: document.getElementById("savedFindings"),
+      reportSummary: document.getElementById("reportSummary"),
+      reportData: document.getElementById("reportData"),
+      reportEvidence: document.getElementById("reportEvidence"),
+      reportRecommendation: document.getElementById("reportRecommendation"),
+      previewButton: document.getElementById("previewButton"),
+      shareButton: document.getElementById("shareButton"),
+      shareStatus: document.getElementById("shareStatus"),
+      previewOverlay: document.getElementById("previewOverlay"),
+      previewBody: document.getElementById("previewBody"),
+      closePreview: document.getElementById("closePreview"),
+      thread: document.getElementById("thread"),
+      agentStatus: document.getElementById("agentStatus")
+    };
+
+    function renderInventory(items) {
+      els.inventory.innerHTML = items.map(item => `
+        <article class="inv-card"><b>${item[0]} <span class="badge">${item[2]}</span></b><span>${item[1]}</span></article>
+      `).join("");
+    }
+
+    function addThread(who, text) {
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      bubble.innerHTML = `<small>${who}</small>${text}`;
+      els.thread.appendChild(bubble);
+      els.thread.scrollTop = els.thread.scrollHeight;
+    }
+
+    function renderJob() {
+      const data = jobData[state.job];
+      els.answerTitle.textContent = state.scanned ? data.title : "Waiting for first read";
+      els.answerText.textContent = state.scanned ? data.answer : "Choose a folder to generate the first narrative answer, evidence table, and chart.";
+      els.evidenceRows.innerHTML = (state.scanned ? data.rows : []).map(row => `
+        <tr><td>${row[0]}</td><td>${row[1]}</td><td>${row[2]}</td></tr>
+      `).join("");
+      els.rowCount.textContent = state.scanned ? `${data.rows.length} rows` : "0 rows";
+      els.chart.innerHTML = (state.scanned ? data.bars : []).map(bar => `
+        <div class="bar-row">
+          <span>${bar[0]}</span>
+          <div class="bar-track"><button class="bar" style="--w:${bar[1]}%" data-focus="${bar[0]}">${bar[0]}</button></div>
+          <b>${bar[1]}</b>
+        </div>
+      `).join("");
+      document.querySelectorAll(".job").forEach(button => button.classList.toggle("active", button.dataset.job === state.job));
+      renderReport();
+    }
+
+    function renderFindings() {
+      els.savedFindings.innerHTML = state.findings.map(item => `<span class="finding">${item}</span>`).join("");
+    }
+
+    function renderReport() {
+      const data = jobData[state.job];
+      els.reportSummary.textContent = state.scanned ? data.answer : "Awaiting first answer.";
+      els.reportData.textContent = state.scanned ? "Finance, operations, ROI, marketing, and supporting documents were classified and mapped." : "Inventory and relationship map will populate after intake.";
+      els.reportEvidence.textContent = state.scanned ? `${data.rows.length} evidence rows and ${data.bars.length} chart signals are ready.` : "Tables and chart signals will be included.";
+      els.reportRecommendation.textContent = state.findings.length ? state.findings.join(" ") : data.recommendation;
+    }
+
+    function startScan() {
+      state.scanned = false;
+      els.scanLabel.textContent = "Reading";
+      els.freshness.textContent = "Reading now";
+      els.assistantFresh.textContent = "Reading now";
+      els.scanState.textContent = "AI reading the folder";
+      els.scanPercent.textContent = "6%";
+      els.scanFill.style.width = "6%";
+      els.readTitle.textContent = "Understanding folder";
+      els.readText.textContent = "The AI is grouping files into business material, measuring coverage, and preparing the first explanation.";
+      els.coverage.textContent = "Sampling files";
+      els.agentStatus.textContent = "Reading the folder and building the first map.";
+      renderInventory(emptyInventory);
+      addThread("AI", "I found finance, product cost, ROI, marketing, and supporting documents. I am preparing a clean explanation.");
+
+      const steps = [
+        [30, "Recognizing business material", "Inventory building"],
+        [55, "Mapping relationships", "Connections ready soon"],
+        [82, "Preparing investigation views", "Evidence shaping"],
+        [100, "Summary ready", "5 groups, 21 relationships"]
+      ];
+      let index = 0;
+      const timer = setInterval(() => {
+        const step = steps[index];
+        els.scanState.textContent = step[1];
+        els.scanPercent.textContent = `${step[0]}%`;
+        els.scanFill.style.width = `${step[0]}%`;
+        els.coverage.textContent = step[2];
+        document.querySelectorAll(".step").forEach((item, stepIndex) => item.classList.toggle("active", stepIndex <= Math.min(index + 1, 3)));
+        if (step[0] === 100) {
+          clearInterval(timer);
+          state.scanned = true;
+          els.scanLabel.textContent = "Ready";
+          els.freshness.textContent = "Fresh 1 minute ago";
+          els.assistantFresh.textContent = "Ready";
+          els.readTitle.textContent = "Folder understood";
+          els.readText.textContent = "The AI found five business groups and a relationship map that supports finance, cost, ROI, and marketing investigations.";
+          els.agentStatus.textContent = "The first explanation, map, table, chart, and presentation outline are ready.";
+          renderInventory(readyInventory);
+          renderJob();
+          addThread("AI", "Ready. You can ask follow-up questions, focus relationship nodes, save findings, and preview a presentation.");
+        }
+        index += 1;
+      }, 520);
+    }
+
+    function askQuestion(prompt) {
+      const question = prompt || els.questionInput.value.trim();
+      if (!question) return;
+      if (!state.scanned) startScan();
+      const data = jobData[state.job];
+      els.answerTitle.textContent = `${data.label}: answer`;
+      els.answerText.textContent = `${data.answer} Current focus: ${state.focus}. Question asked: "${question}"`;
+      addThread("Analyst", question);
+      addThread("AI", `${data.recommendation}`);
+      renderReport();
+    }
+
+    function setFocus(label) {
+      state.focus = label;
+      els.focusLabel.textContent = `Focus: ${label}`;
+      document.querySelectorAll(".node").forEach(node => node.classList.toggle("active", node.dataset.focus === label));
+      if (state.scanned) {
+        els.answerText.textContent = `${jobData[state.job].answer} Focused on ${label}.`;
+        addThread("AI", `Focused the investigation on ${label}.`);
+      }
+    }
+
+    function addFinding() {
+      const finding = jobData[state.job].finding;
+      if (!state.findings.includes(finding)) state.findings.push(finding);
+      renderFindings();
+      renderReport();
+      addThread("AI", "Saved this finding into the presentation.");
+    }
+
+    function preview() {
+      const data = jobData[state.job];
+      const saved = state.findings.length ? state.findings.join(" ") : data.recommendation;
+      els.previewBody.innerHTML = `
+        <section class="slide"><b>1. Conclusion</b><p>${state.scanned ? data.answer : "Choose a folder to fill the presentation."}</p></section>
+        <section class="slide"><b>2. Data understood</b><p>Pi Analytics grouped unknown files into business inventory and mapped relationships across suppliers, payments, approvals, products, and channels.</p></section>
+        <section class="slide"><b>3. Evidence</b><p>${data.rows.map(row => `${row[0]}: ${row[2]}`).join(". ")}.</p></section>
+        <section class="slide"><b>4. Recommendation</b><p>${saved}</p></section>
+      `;
+      els.previewOverlay.classList.add("open");
+    }
+
+    function share() {
+      els.shareStatus.textContent = "Hosted presentation ready: pi.analytics/share/guided-investigation";
+      addThread("AI", "The hosted presentation is ready to share.");
+    }
+
+    els.selectFolder.addEventListener("click", () => {
+      els.folderInput.click();
+      startScan();
+    });
+    els.folderInput.addEventListener("change", startScan);
+    document.querySelectorAll(".job").forEach(button => {
+      button.addEventListener("click", () => {
+        state.job = button.dataset.job;
+        renderJob();
+        addThread("AI", `Switched investigation type to ${jobData[state.job].label}.`);
+      });
+    });
+    document.querySelectorAll(".node").forEach(node => node.addEventListener("click", () => setFocus(node.dataset.focus)));
+    els.chart.addEventListener("click", event => {
+      const bar = event.target.closest(".bar");
+      if (bar) setFocus(bar.dataset.focus);
+    });
+    els.askButton.addEventListener("click", () => askQuestion());
+    els.questionInput.addEventListener("keydown", event => {
+      if (event.key === "Enter") askQuestion();
+    });
+    document.querySelectorAll(".quick").forEach(button => {
+      button.addEventListener("click", () => {
+        els.questionInput.value = button.dataset.prompt;
+        askQuestion(button.dataset.prompt);
+      });
+    });
+    els.addFinding.addEventListener("click", addFinding);
+    els.annotation.addEventListener("input", renderReport);
+    els.previewButton.addEventListener("click", preview);
+    els.shareButton.addEventListener("click", share);
+    els.closePreview.addEventListener("click", () => els.previewOverlay.classList.remove("open"));
+    els.previewOverlay.addEventListener("click", event => {
+      if (event.target === els.previewOverlay) els.previewOverlay.classList.remove("open");
+    });
+
+    renderInventory(emptyInventory);
+    renderJob();
+    renderReport();
+  </script>
+</body>
+</html>
