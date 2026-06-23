@@ -29,6 +29,7 @@ coverage/
 tui-debug.log
 compaction-results/
 mock-data/
+reports/
 .opencode/
 syntax.jsonl
 out.jsonl
