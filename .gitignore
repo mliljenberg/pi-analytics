@@ -30,6 +30,7 @@ tui-debug.log
 compaction-results/
 mock-data/
 reports/
+output/
 .opencode/
 syntax.jsonl
 out.jsonl
