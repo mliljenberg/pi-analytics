@@ -1,0 +1,90 @@
+import type { CanvasCard, PersistedBoard, PromptCardContext } from "./canvas.ts";
+
+export const IPC = {
+	selectWorkspaceFolder: "analytics:select-workspace-folder",
+	startSession: "analytics:start-session",
+	sendPrompt: "analytics:send-prompt",
+	abortPrompt: "analytics:abort-prompt",
+	listModels: "analytics:list-models",
+	setModel: "analytics:set-model",
+	saveBoard: "analytics:save-board",
+	exportReport: "analytics:export-report",
+	rendererEvent: "analytics:renderer-event",
+} as const;
+
+export interface AppDiagnostic {
+	type: "info" | "warning" | "error";
+	message: string;
+}
+
+export interface ModelSummary {
+	provider: string;
+	id: string;
+	name: string;
+	providerName: string;
+	configured: boolean;
+	contextWindow: number;
+	reasoning: boolean;
+}
+
+export interface WorkspaceFolder {
+	path: string;
+}
+
+export interface SessionSnapshot {
+	cwd: string;
+	sessionId: string;
+	model?: ModelSummary;
+	models: ModelSummary[];
+	diagnostics: AppDiagnostic[];
+	board?: PersistedBoard;
+}
+
+export interface SendPromptRequest {
+	text: string;
+	selectedCards: PromptCardContext[];
+}
+
+export interface SetModelRequest {
+	provider: string;
+	id: string;
+}
+
+export interface SaveBoardRequest {
+	board: PersistedBoard;
+}
+
+export interface ExportReportRequest {
+	cards: CanvasCard[];
+}
+
+export interface ChatMessageEvent {
+	type: "chat-message";
+	id: string;
+	author: "You" | "Pi" | "System";
+	text: string;
+	timestamp: string;
+}
+
+export type MainToRendererEvent =
+	| { type: "status"; text: string; busy: boolean }
+	| { type: "diagnostic"; diagnostic: AppDiagnostic }
+	| { type: "assistant-stream"; id: string; text: string }
+	| { type: "analysis-card"; card: CanvasCard }
+	| { type: "tool-card-start"; card: CanvasCard }
+	| { type: "tool-card-end"; toolCallId: string; body: string; isError: boolean }
+	| { type: "model-selected"; model: ModelSummary }
+	| { type: "exported-report"; filePath: string }
+	| ChatMessageEvent;
+
+export interface AnalyticsDesktopApi {
+	selectWorkspaceFolder(): Promise<WorkspaceFolder | undefined>;
+	startSession(cwd: string): Promise<SessionSnapshot>;
+	sendPrompt(request: SendPromptRequest): Promise<void>;
+	abortPrompt(): Promise<void>;
+	listModels(): Promise<ModelSummary[]>;
+	setModel(request: SetModelRequest): Promise<void>;
+	saveBoard(request: SaveBoardRequest): Promise<void>;
+	exportReport(request: ExportReportRequest): Promise<string | undefined>;
+	onEvent(listener: (event: MainToRendererEvent) => void): () => void;
+}

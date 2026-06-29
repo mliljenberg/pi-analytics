@@ -1,0 +1,14 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"allowImportingTsExtensions": true,
+		"noEmit": true,
+		"paths": {
+			"@earendil-works/pi-analytics-desktop/*": ["./src/*"]
+		}
+	},
+	"include": ["renderer/**/*.ts", "renderer/**/*.d.ts", "src/shared/canvas.ts", "src/shared/ipc.ts", "src/shared/text.ts"]
+}

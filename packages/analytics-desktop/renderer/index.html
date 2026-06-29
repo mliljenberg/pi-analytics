@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>Pi Analytics</title>
+	</head>
+	<body>
+		<div class="app">
+			<header class="topbar">
+				<div class="brand"><span class="mark" aria-hidden="true"></span><span>Pi Analytics</span></div>
+				<div class="top-status" id="topStatus">No workspace</div>
+				<div class="top-actions">
+					<select class="model-select" id="modelSelect" aria-label="Model"></select>
+					<button class="ghost-button" id="openFolderButton">Open folder</button>
+					<button class="ghost-button" id="newBoardButton">New board</button>
+					<button class="ghost-button" id="abortButton">Abort</button>
+					<button class="dark-button" id="reportButton">Report</button>
+				</div>
+			</header>
+
+			<main class="stage">
+				<section class="canvas-wrap" aria-label="Canvas area">
+					<div class="canvas-shell" id="canvasShell">
+						<canvas class="workspace-canvas" id="workspaceCanvas" layoutsubtree aria-label="Analytics canvas"></canvas>
+						<div class="card-host" id="cardHost"></div>
+						<div class="empty-hint" id="emptyHint">
+							<strong>Open a folder</strong>
+							<span>Then ask Pi to analyze the workspace.</span>
+						</div>
+					</div>
+				</section>
+
+				<div class="context-bar" id="contextBar" aria-live="polite">
+					<span class="selected-count" id="selectedCount">0 selected</span>
+					<button class="soft-button" id="askSelectedButton">Ask</button>
+					<button class="soft-button" id="keepSelectedButton">Keep</button>
+					<button class="soft-button" id="openSelectedButton">Open</button>
+					<button class="soft-button" id="exportSelectedButton">Export</button>
+					<button class="soft-button" id="deleteSelectedButton">Delete</button>
+				</div>
+
+				<section class="chat-dock" aria-label="Chat with Pi">
+					<div class="chat-log" id="chatLog"></div>
+					<div class="selected-note" id="selectedNote"></div>
+					<form class="composer" id="composer">
+						<input id="chatInput" autocomplete="off" aria-label="Ask Pi" placeholder="Ask Pi about the workspace or selected canvas items">
+						<button class="dark-button" type="submit">Send</button>
+					</form>
+					<div class="suggestions" aria-label="Suggestions">
+						<button class="chip" data-prompt="Summarize this folder">Summarize</button>
+						<button class="chip" data-prompt="Find suspicious transactions">Suspicious transactions</button>
+						<button class="chip" data-prompt="Map the tables and explain relationships">Map tables</button>
+						<button class="chip" data-prompt="Build a board-ready report">Board report</button>
+					</div>
+				</section>
+			</main>
+		</div>
+
+		<div class="modal" id="modal" role="dialog" aria-modal="true" aria-label="Focused canvas item">
+			<article class="focus-view">
+				<div class="focus-head">
+					<div>
+						<h2 id="modalTitle">Canvas item</h2>
+						<p id="modalSubtitle"></p>
+					</div>
+					<div class="focus-actions">
+						<button class="soft-button" id="modalKeepButton">Keep</button>
+						<button class="soft-button" id="modalExportButton">Export</button>
+						<button class="dark-button" id="modalCloseButton">Close</button>
+					</div>
+				</div>
+				<div class="focus-body" id="modalBody"></div>
+			</article>
+		</div>
+
+		<div class="toast" id="toast" role="status"></div>
+		<script type="module" src="/src/main.ts"></script>
+	</body>
+</html>

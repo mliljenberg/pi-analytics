@@ -1,0 +1,23 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"outDir": "./dist/electron",
+		"rootDir": "./src",
+		"paths": {
+			"@earendil-works/pi-ai": ["../ai/src/index.ts"],
+			"@earendil-works/pi-ai/*": ["../ai/src/*", "../ai/src/providers/*"],
+			"@earendil-works/pi-ai/compat": ["../ai/src/compat.ts"],
+			"@earendil-works/pi-agent-core": ["../agent/src/index.ts"],
+			"@earendil-works/pi-agent-core/*": ["../agent/src/*"],
+			"@earendil-works/pi-coding-agent": ["../coding-agent/src/index.ts"],
+			"@earendil-works/pi-coding-agent/core/agent-session": ["../coding-agent/src/core/agent-session.ts"],
+			"@earendil-works/pi-coding-agent/core/agent-session-services": [
+				"../coding-agent/src/core/agent-session-services.ts"
+			],
+			"@earendil-works/pi-coding-agent/core/session-manager": ["../coding-agent/src/core/session-manager.ts"],
+			"@earendil-works/pi-coding-agent/*": ["../coding-agent/src/*"]
+		}
+	},
+	"include": ["src/**/*.ts"],
+	"exclude": ["node_modules", "dist", "**/*.d.ts", "src/**/*.d.ts"]
+}
