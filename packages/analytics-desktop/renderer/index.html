@@ -12,6 +12,7 @@
 				<div class="top-status" id="topStatus">No workspace</div>
 				<div class="top-actions">
 					<select class="model-select" id="modelSelect" aria-label="Model"></select>
+					<select class="recent-select" id="recentWorkspaceSelect" aria-label="Open recent workspace"></select>
 					<button class="ghost-button" id="openFolderButton">Open folder</button>
 					<button class="ghost-button" id="newBoardButton">New board</button>
 					<button class="ghost-button" id="abortButton">Abort</button>
@@ -40,12 +41,22 @@
 					<button class="soft-button" id="deleteSelectedButton">Delete</button>
 				</div>
 
-				<section class="chat-dock" aria-label="Chat with Pi">
+				<section class="chat-dock" id="chatDock" aria-label="Chat with Pi">
+					<button class="dock-toggle" id="dockToggleButton" type="button">Dock right</button>
 					<div class="chat-log" id="chatLog"></div>
+					<div class="agent-loading" id="agentLoading">
+						<div><strong>Pi</strong> <span id="agentLoadingText">Working</span></div>
+						<div class="loading-track"><span></span></div>
+					</div>
+					<div class="queue-stack" id="queueStack"></div>
 					<div class="selected-note" id="selectedNote"></div>
 					<form class="composer" id="composer">
 						<input id="chatInput" autocomplete="off" aria-label="Ask Pi" placeholder="Ask Pi about the workspace or selected canvas items">
-						<button class="dark-button" type="submit">Send</button>
+						<div class="composer-actions">
+							<button class="soft-button queue-button" id="steerButton" type="button">Steer</button>
+							<button class="soft-button queue-button" id="queueNextButton" type="button">Queue next</button>
+							<button class="dark-button" id="sendButton" type="submit">Send</button>
+						</div>
 					</form>
 				</section>
 			</main>

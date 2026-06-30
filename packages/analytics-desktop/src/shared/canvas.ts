@@ -45,6 +45,8 @@ export interface PromptCardContext {
 	type: CanvasCardType;
 	title: string;
 	body: string;
+	position: CanvasCardPosition;
+	kept: boolean;
 }
 
 export interface PersistedBoard {

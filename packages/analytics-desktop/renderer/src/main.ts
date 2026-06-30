@@ -5,6 +5,7 @@ import type {
 	MainToRendererEvent,
 	ModelSummary,
 	ProviderSummary,
+	RecentWorkspace,
 	SessionSnapshot,
 } from "../../src/shared/ipc.ts";
 import "./styles.css";
@@ -22,6 +23,8 @@ interface StreamingMessage {
 	text: string;
 }
 
+type ChatDockPosition = "bottom" | "right";
+
 interface AppState {
 	authenticated: boolean;
 	authProviders: ProviderSummary[];
@@ -30,16 +33,22 @@ interface AppState {
 	sessionId?: string;
 	model?: ModelSummary;
 	models: ModelSummary[];
+	recentWorkspaces: RecentWorkspace[];
 	cards: CanvasCard[];
 	messages: ChatMessage[];
 	streaming?: StreamingMessage;
+	queuedSteering: string[];
+	queuedFollowUp: string[];
 	selectedIds: Set<string>;
+	loadingCardIds: Set<string>;
 	activeModalId?: string;
 	busy: boolean;
 	statusText: string;
 	shareReady: boolean;
 	htmlCanvasActive: boolean;
 	htmlCanvasFailed: boolean;
+	viewport: CanvasViewport;
+	chatDockPosition: ChatDockPosition;
 }
 
 interface CardDragState {
@@ -52,10 +61,31 @@ interface CardDragState {
 	moved: boolean;
 }
 
+interface CanvasViewport {
+	x: number;
+	y: number;
+	zoom: number;
+}
+
+interface CanvasPanState {
+	pointerId: number;
+	startClientX: number;
+	startClientY: number;
+	startX: number;
+	startY: number;
+}
+
+const MIN_CANVAS_ZOOM = 0.25;
+const MAX_CANVAS_ZOOM = 2.5;
+const CANVAS_ZOOM_SENSITIVITY = 0.0018;
+const GRID_SIZE = 48;
+const CARD_PLACEMENT_GAP = 32;
+
 const state: AppState = {
 	authenticated: false,
 	authProviders: [],
 	models: [],
+	recentWorkspaces: [],
 	cards: [],
 	messages: [
 		{
@@ -65,12 +95,21 @@ const state: AppState = {
 			timestamp: new Date().toISOString(),
 		},
 	],
+	queuedSteering: [],
+	queuedFollowUp: [],
 	selectedIds: new Set(),
+	loadingCardIds: new Set(),
 	busy: false,
 	statusText: "No workspace",
 	shareReady: false,
 	htmlCanvasActive: false,
 	htmlCanvasFailed: false,
+	viewport: {
+		x: 0,
+		y: 0,
+		zoom: 1,
+	},
+	chatDockPosition: readChatDockPosition(),
 };
 
 const api = window.piAnalytics;
@@ -86,6 +125,7 @@ const loginError = requireElement<HTMLParagraphElement>("loginError");
 const loginSubmitButton = requireElement<HTMLButtonElement>("loginSubmitButton");
 const topStatus = requireElement<HTMLElement>("topStatus");
 const modelSelect = requireElement<HTMLSelectElement>("modelSelect");
+const recentWorkspaceSelect = requireElement<HTMLSelectElement>("recentWorkspaceSelect");
 const openFolderButton = requireElement<HTMLButtonElement>("openFolderButton");
 const newBoardButton = requireElement<HTMLButtonElement>("newBoardButton");
 const abortButton = requireElement<HTMLButtonElement>("abortButton");
@@ -97,9 +137,17 @@ const emptyHint = requireElement<HTMLDivElement>("emptyHint");
 const contextBar = requireElement<HTMLDivElement>("contextBar");
 const selectedCount = requireElement<HTMLSpanElement>("selectedCount");
 const selectedNote = requireElement<HTMLDivElement>("selectedNote");
+const chatDock = requireElement<HTMLElement>("chatDock");
+const dockToggleButton = requireElement<HTMLButtonElement>("dockToggleButton");
 const chatLog = requireElement<HTMLDivElement>("chatLog");
+const agentLoading = requireElement<HTMLDivElement>("agentLoading");
+const agentLoadingText = requireElement<HTMLSpanElement>("agentLoadingText");
+const queueStack = requireElement<HTMLDivElement>("queueStack");
 const composer = requireElement<HTMLFormElement>("composer");
 const chatInput = requireElement<HTMLInputElement>("chatInput");
+const steerButton = requireElement<HTMLButtonElement>("steerButton");
+const queueNextButton = requireElement<HTMLButtonElement>("queueNextButton");
+const sendButton = requireElement<HTMLButtonElement>("sendButton");
 const askSelectedButton = requireElement<HTMLButtonElement>("askSelectedButton");
 const keepSelectedButton = requireElement<HTMLButtonElement>("keepSelectedButton");
 const openSelectedButton = requireElement<HTMLButtonElement>("openSelectedButton");
@@ -118,6 +166,7 @@ let saveTimer: number | undefined;
 let canvasFrame: number | undefined;
 let toastTimer: number | undefined;
 let cardDrag: CardDragState | undefined;
+let canvasPan: CanvasPanState | undefined;
 let suppressNextCardClick = false;
 
 function requireElement<T extends HTMLElement>(id: string): T {
@@ -128,13 +177,28 @@ function requireElement<T extends HTMLElement>(id: string): T {
 	return element as T;
 }
 
+function readChatDockPosition(): ChatDockPosition {
+	const stored = localStorage.getItem("pi-analytics-chat-dock");
+	return stored === "right" || stored === "bottom" ? stored : "bottom";
+}
+
+function setChatDockPosition(position: ChatDockPosition): void {
+	state.chatDockPosition = position;
+	localStorage.setItem("pi-analytics-chat-dock", position);
+	renderChatDock();
+}
+
 function render(): void {
 	renderAuth();
 	renderStatus();
 	renderModels();
+	renderRecentWorkspaces();
+	renderChatDock();
 	renderChat();
+	renderQueue();
 	renderCards();
 	renderSelection();
+	renderCanvasViewport();
 	scheduleCanvasPaint();
 }
 
@@ -198,8 +262,9 @@ function renderStatus(): void {
 	newBoardButton.disabled = locked;
 	abortButton.disabled = locked || !state.busy;
 	reportButton.disabled = locked || !state.cwd || state.busy;
-	chatInput.disabled = locked || !state.cwd || state.busy;
+	chatInput.disabled = locked || !state.cwd;
 	modelSelect.disabled = locked || !state.cwd || state.busy || state.models.length === 0;
+	recentWorkspaceSelect.disabled = locked || state.busy || state.recentWorkspaces.length === 0;
 	for (const button of [
 		askSelectedButton,
 		keepSelectedButton,
@@ -209,6 +274,31 @@ function renderStatus(): void {
 	]) {
 		button.disabled = locked;
 	}
+	sendButton.disabled = locked || !state.cwd || state.busy;
+	steerButton.disabled = locked || !state.cwd || !state.busy;
+	queueNextButton.disabled = locked || !state.cwd || !state.busy;
+	composer.classList.toggle("busy", state.busy);
+}
+
+function renderChatDock(): void {
+	chatDock.classList.toggle("right", state.chatDockPosition === "right");
+	dockToggleButton.textContent = state.chatDockPosition === "right" ? "Bottom" : "Right";
+}
+
+function renderRecentWorkspaces(): void {
+	const selectedValue = recentWorkspaceSelect.value;
+	recentWorkspaceSelect.replaceChildren();
+	const placeholder = document.createElement("option");
+	placeholder.value = "";
+	placeholder.textContent = state.recentWorkspaces.length === 0 ? "No recent" : "Open recent";
+	recentWorkspaceSelect.appendChild(placeholder);
+	for (const workspace of state.recentWorkspaces) {
+		const option = document.createElement("option");
+		option.value = workspace.path;
+		option.textContent = workspaceLabel(workspace);
+		recentWorkspaceSelect.appendChild(option);
+	}
+	recentWorkspaceSelect.value = state.recentWorkspaces.some((workspace) => workspace.path === selectedValue) ? selectedValue : "";
 }
 
 function renderModels(): void {
@@ -233,6 +323,7 @@ function renderModels(): void {
 }
 
 function renderChat(): void {
+	const stickToBottom = shouldStickChatToBottom(chatLog);
 	chatLog.replaceChildren();
 	const messages = state.streaming
 		? [
@@ -254,13 +345,47 @@ function renderChat(): void {
 		row.append(author, document.createTextNode(` ${message.text}`));
 		chatLog.appendChild(row);
 	}
-	chatLog.scrollTop = chatLog.scrollHeight;
+	renderAgentLoading();
+	if (stickToBottom) {
+		chatLog.scrollTop = chatLog.scrollHeight;
+	}
+}
+
+function renderAgentLoading(): void {
+	agentLoading.classList.toggle("open", state.busy);
+	agentLoadingText.textContent = state.statusText;
+}
+
+function renderQueue(): void {
+	queueStack.replaceChildren();
+	for (const item of state.queuedSteering) {
+		queueStack.appendChild(createQueuedMessage("Steering", item));
+	}
+	for (const item of state.queuedFollowUp) {
+		queueStack.appendChild(createQueuedMessage("Queued next", item));
+	}
+	queueStack.classList.toggle("open", state.queuedSteering.length + state.queuedFollowUp.length > 0);
+}
+
+function createQueuedMessage(label: string, text: string): HTMLElement {
+	const item = document.createElement("div");
+	item.className = "queued-message";
+	const strong = document.createElement("strong");
+	strong.textContent = label;
+	const body = document.createElement("span");
+	body.textContent = text;
+	item.append(strong, body);
+	return item;
+}
+
+function shouldStickChatToBottom(element: HTMLElement): boolean {
+	return element.scrollHeight - element.scrollTop - element.clientHeight < 36;
 }
 
 function renderCards(): void {
 	emptyHint.classList.toggle("hidden", state.cards.length > 0);
-	cardHost.replaceChildren(...state.cards.map((card) => createCardElement(card, false)));
-	workspaceCanvas.replaceChildren(...state.cards.map((card) => createCardElement(card, true)));
+	cardHost.replaceChildren(...state.cards.map((card) => createCardElement(card, false, state.loadingCardIds.has(card.id))));
+	workspaceCanvas.replaceChildren(...state.cards.map((card) => createCardElement(card, true, state.loadingCardIds.has(card.id))));
 }
 
 function renderSelection(): void {
@@ -271,7 +396,7 @@ function renderSelection(): void {
 	selectedNote.textContent = selected.length > 0 ? `Using: ${selected.map((card) => card.title).join(", ")}` : "";
 }
 
-function createCardElement(card: CanvasCard, clone: boolean): HTMLElement {
+function createCardElement(card: CanvasCard, clone: boolean, loading = false): HTMLElement {
 	const article = document.createElement("article");
 	if (clone) {
 		article.ariaHidden = "true";
@@ -280,6 +405,7 @@ function createCardElement(card: CanvasCard, clone: boolean): HTMLElement {
 		"canvas-card",
 		card.type === "html" ? "html-card" : "",
 		state.selectedIds.has(card.id) ? "selected" : "",
+		loading || card.status === "working" ? "loading" : "",
 		card.kept ? "kept" : "",
 		card.status === "error" ? "error" : "",
 	]
@@ -301,33 +427,65 @@ function createCardElement(card: CanvasCard, clone: boolean): HTMLElement {
 	actions.className = "card-actions";
 	const status = document.createElement("span");
 	status.className = `status-pill ${card.kept ? "kept" : card.status}`;
-	status.textContent = card.kept ? "Kept" : card.statusLabel;
+	status.textContent = loading ? "Updating" : card.kept ? "Kept" : card.statusLabel;
 	actions.appendChild(status);
-	actions.appendChild(actionButton("Open", "open", clone));
+	actions.appendChild(actionButton("Fullscreen", "open", clone));
 	if (card.type === "report" || card.type === "html" || card.kept) {
 		actions.appendChild(actionButton("Export", "export", clone));
 	}
+	actions.appendChild(actionButton("Close", "close", clone));
 	head.append(title, actions);
 
 	const body = document.createElement("div");
 	body.className = "card-body";
 	appendCardBody(body, card);
 
-	article.append(head, body);
+	article.append(head);
+	if (loading || card.status === "working") {
+		article.appendChild(createCardLoading(loading ? "Updating" : card.statusLabel, card.progress));
+	}
+	article.appendChild(body);
 	return article;
 }
 
 function actionButton(label: string, action: string, inert: boolean): HTMLButtonElement {
 	const button = document.createElement("button");
-	button.className = "icon-button";
+	button.className = `icon-button card-action ${action}-action`;
 	button.type = "button";
 	button.dataset.action = action;
-	button.textContent = label;
 	button.ariaLabel = label;
+	button.title = label;
+	if (action === "open") {
+		const glyph = document.createElement("span");
+		glyph.className = "expand-glyph";
+		glyph.ariaHidden = "true";
+		button.appendChild(glyph);
+	} else if (action === "close") {
+		button.textContent = "x";
+	} else {
+		button.textContent = label;
+	}
 	if (inert) {
 		button.tabIndex = -1;
 	}
 	return button;
+}
+
+function createCardLoading(label: string, progress: number | undefined): HTMLElement {
+	const loading = document.createElement("div");
+	loading.className = "card-loading";
+	const text = document.createElement("span");
+	text.textContent = label;
+	const track = document.createElement("div");
+	track.className = "card-loading-track";
+	const fill = document.createElement("span");
+	fill.className = progress === undefined ? "card-loading-fill indeterminate" : "card-loading-fill";
+	if (progress !== undefined) {
+		fill.style.setProperty("--progress", `${progress}%`);
+	}
+	track.appendChild(fill);
+	loading.append(text, track);
+	return loading;
 }
 
 function setCardPosition(element: HTMLElement, position: CanvasCardPosition): void {
@@ -337,22 +495,21 @@ function setCardPosition(element: HTMLElement, position: CanvasCardPosition): vo
 	element.style.setProperty("--h", `${position.h}px`);
 }
 
+function renderCanvasViewport(): void {
+	cardHost.style.transform = `translate(${state.viewport.x}px, ${state.viewport.y}px) scale(${state.viewport.zoom})`;
+}
+
 function appendCardBody(body: HTMLElement, card: CanvasCard): void {
 	if (card.status === "working") {
-		const text = document.createElement("p");
-		text.textContent = card.body;
+		const text = document.createElement("div");
+		text.className = "markdown-body";
+		appendMarkdown(text, card.body);
 		const lines = document.createElement("div");
 		lines.className = "analysis-lines";
 		lines.ariaHidden = "true";
 		lines.append(document.createElement("span"), document.createElement("span"), document.createElement("span"));
 		for (const child of lines.children) child.className = "writing-line";
-		const progress = document.createElement("div");
-		progress.className = "progress-track";
-		const fill = document.createElement("span");
-		fill.className = "progress-fill";
-		fill.style.setProperty("--progress", `${card.progress ?? 35}%`);
-		progress.appendChild(fill);
-		body.append(text, lines, progress);
+		body.append(text, lines);
 		return;
 	}
 
@@ -400,9 +557,10 @@ function appendCardBody(body: HTMLElement, card: CanvasCard): void {
 		return;
 	}
 
-	const paragraph = document.createElement("p");
-	paragraph.textContent = card.body;
-	body.appendChild(paragraph);
+	const markdown = document.createElement("div");
+	markdown.className = "markdown-body";
+	appendMarkdown(markdown, card.body);
+	body.appendChild(markdown);
 
 	if (card.type === "report" && card.sections) {
 		const sections = document.createElement("div");
@@ -412,8 +570,9 @@ function appendCardBody(body: HTMLElement, card: CanvasCard): void {
 			item.className = "report-section";
 			const title = document.createElement("b");
 			title.textContent = section.title;
-			const sectionBody = document.createElement("span");
-			sectionBody.textContent = section.body;
+			const sectionBody = document.createElement("div");
+			sectionBody.className = "report-section-body";
+			appendMarkdown(sectionBody, section.body);
 			item.append(title, sectionBody);
 			sections.appendChild(item);
 		}
@@ -421,7 +580,7 @@ function appendCardBody(body: HTMLElement, card: CanvasCard): void {
 		return;
 	}
 
-	if (card.points && card.points.length > 0) {
+	if (card.type !== "summary" && card.points && card.points.length > 0) {
 		const list = document.createElement("ul");
 		list.className = "summary-list";
 		for (const point of card.points) {
@@ -473,6 +632,135 @@ function sanitizeCss(value: string): string {
 		.replace(/url\s*\([^)]*\)/gi, "")
 		.replace(/expression\s*\([^)]*\)/gi, "")
 		.replace(/javascript:/gi, "");
+}
+
+function appendMarkdown(parent: HTMLElement, markdown: string): void {
+	const lines = markdown.split(/\r?\n/);
+	let paragraph: string[] = [];
+	let list: HTMLUListElement | HTMLOListElement | undefined;
+	let codeLines: string[] | undefined;
+
+	const flushParagraph = () => {
+		if (paragraph.length === 0) return;
+		const element = document.createElement("p");
+		appendInlineMarkdown(element, paragraph.join(" "));
+		parent.appendChild(element);
+		paragraph = [];
+	};
+	const flushList = () => {
+		if (!list) return;
+		parent.appendChild(list);
+		list = undefined;
+	};
+	const flushCode = () => {
+		if (!codeLines) return;
+		const pre = document.createElement("pre");
+		const code = document.createElement("code");
+		code.textContent = codeLines.join("\n");
+		pre.appendChild(code);
+		parent.appendChild(pre);
+		codeLines = undefined;
+	};
+
+	for (const line of lines) {
+		if (line.trim().startsWith("```")) {
+			if (codeLines) {
+				flushCode();
+			} else {
+				flushParagraph();
+				flushList();
+				codeLines = [];
+			}
+			continue;
+		}
+		if (codeLines) {
+			codeLines.push(line);
+			continue;
+		}
+
+		const trimmed = line.trim();
+		if (!trimmed) {
+			flushParagraph();
+			flushList();
+			continue;
+		}
+
+		const heading = /^(#{1,3})\s+(.+)$/.exec(trimmed);
+		if (heading) {
+			flushParagraph();
+			flushList();
+			const level = String(Math.min(3, heading[1].length + 2));
+			const element = document.createElement(`h${level}`);
+			appendInlineMarkdown(element, heading[2]);
+			parent.appendChild(element);
+			continue;
+		}
+
+		const unordered = /^[-*]\s+(.+)$/.exec(trimmed);
+		const ordered = /^\d+\.\s+(.+)$/.exec(trimmed);
+		if (unordered || ordered) {
+			flushParagraph();
+			const orderedList = Boolean(ordered);
+			if (!list || (orderedList && list.tagName !== "OL") || (!orderedList && list.tagName !== "UL")) {
+				flushList();
+				list = orderedList ? document.createElement("ol") : document.createElement("ul");
+			}
+			const item = document.createElement("li");
+			appendInlineMarkdown(item, (ordered ?? unordered)?.[1] ?? "");
+			list.appendChild(item);
+			continue;
+		}
+
+		paragraph.push(trimmed);
+	}
+
+	flushParagraph();
+	flushList();
+	flushCode();
+}
+
+function appendInlineMarkdown(parent: HTMLElement, text: string): void {
+	const tokenPattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g;
+	let cursor = 0;
+	for (const match of text.matchAll(tokenPattern)) {
+		const token = match[0];
+		if (match.index > cursor) {
+			parent.appendChild(document.createTextNode(text.slice(cursor, match.index)));
+		}
+		parent.appendChild(inlineMarkdownNode(token));
+		cursor = match.index + token.length;
+	}
+	if (cursor < text.length) {
+		parent.appendChild(document.createTextNode(text.slice(cursor)));
+	}
+}
+
+function inlineMarkdownNode(token: string): Node {
+	if (token.startsWith("`") && token.endsWith("`")) {
+		const code = document.createElement("code");
+		code.textContent = token.slice(1, -1);
+		return code;
+	}
+	if (token.startsWith("**") && token.endsWith("**")) {
+		const strong = document.createElement("strong");
+		strong.textContent = token.slice(2, -2);
+		return strong;
+	}
+	if (token.startsWith("*") && token.endsWith("*")) {
+		const em = document.createElement("em");
+		em.textContent = token.slice(1, -1);
+		return em;
+	}
+	const link = /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/.exec(token);
+	if (link) {
+		const anchor = document.createElement("a");
+		anchor.textContent = link[1];
+		anchor.href = link[2];
+		anchor.target = "_blank";
+		anchor.rel = "noreferrer";
+		return anchor;
+	}
+	return document.createTextNode(token);
 }
 
 function createTable(rows: string[][]): HTMLTableElement {
@@ -540,7 +828,7 @@ function paintCanvas(): void {
 
 	ctx.setTransform(scale, 0, 0, scale, 0, 0);
 	ctx.clearRect(0, 0, rect.width, rect.height);
-	drawGrid(ctx, rect.width, rect.height);
+	drawGrid(ctx, rect.width, rect.height, state.viewport);
 
 	const drawElementImage = ctx.drawElementImage;
 	const supportsHtmlCanvas = typeof drawElementImage === "function" && !state.htmlCanvasFailed && window.innerWidth > 860;
@@ -551,10 +839,17 @@ function paintCanvas(): void {
 
 	try {
 		const clones = Array.from(workspaceCanvas.querySelectorAll<HTMLElement>(":scope > .canvas-card"));
-		for (const clone of clones) {
-			const card = state.cards.find((item) => item.id === clone.dataset.id);
-			if (!card) continue;
-			drawElementImage.call(ctx, clone, card.position.x, card.position.y);
+		ctx.save();
+		try {
+			ctx.translate(state.viewport.x, state.viewport.y);
+			ctx.scale(state.viewport.zoom, state.viewport.zoom);
+			for (const clone of clones) {
+				const card = state.cards.find((item) => item.id === clone.dataset.id);
+				if (!card) continue;
+				drawElementImage.call(ctx, clone, card.position.x, card.position.y);
+			}
+		} finally {
+			ctx.restore();
 		}
 	} catch (error) {
 		state.htmlCanvasFailed = true;
@@ -564,23 +859,30 @@ function paintCanvas(): void {
 	}
 }
 
-function drawGrid(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+function drawGrid(ctx: CanvasRenderingContext2D, width: number, height: number, viewport: CanvasViewport): void {
+	const step = GRID_SIZE * viewport.zoom;
+	const startX = positiveModulo(viewport.x, step);
+	const startY = positiveModulo(viewport.y, step);
 	ctx.save();
 	ctx.strokeStyle = "rgba(16, 17, 20, 0.035)";
 	ctx.lineWidth = 1;
-	for (let x = 0; x <= width; x += 48) {
+	for (let x = startX; x <= width; x += step) {
 		ctx.beginPath();
 		ctx.moveTo(x, 0);
 		ctx.lineTo(x, height);
 		ctx.stroke();
 	}
-	for (let y = 0; y <= height; y += 48) {
+	for (let y = startY; y <= height; y += step) {
 		ctx.beginPath();
 		ctx.moveTo(0, y);
 		ctx.lineTo(width, y);
 		ctx.stroke();
 	}
 	ctx.restore();
+}
+
+function positiveModulo(value: number, divisor: number): number {
+	return ((value % divisor) + divisor) % divisor;
 }
 
 async function openWorkspace(): Promise<void> {
@@ -596,6 +898,7 @@ async function startSession(cwd: string): Promise<void> {
 	try {
 		const snapshot = await api.startSession(cwd);
 		applySessionSnapshot(snapshot);
+		await refreshRecentWorkspaces();
 		await applyPendingModelSelection();
 		showToast("Workspace opened.");
 	} catch (error) {
@@ -614,7 +917,11 @@ function applySessionSnapshot(snapshot: SessionSnapshot): void {
 	state.models = snapshot.models;
 	state.cards = snapshot.board?.cards ?? [];
 	state.shareReady = snapshot.board?.shareReady ?? false;
+	state.queuedSteering = [];
+	state.queuedFollowUp = [];
+	resetCanvasViewport();
 	state.selectedIds.clear();
+	state.loadingCardIds.clear();
 	for (const diagnostic of snapshot.diagnostics) {
 		addSystemMessage(diagnostic.message);
 	}
@@ -630,7 +937,11 @@ function applyAuthState(authState: AuthState): void {
 		state.sessionId = undefined;
 		state.model = undefined;
 		state.cards = [];
+		state.queuedSteering = [];
+		state.queuedFollowUp = [];
+		resetCanvasViewport();
 		state.selectedIds.clear();
+		state.loadingCardIds.clear();
 	}
 	render();
 }
@@ -638,9 +949,22 @@ function applyAuthState(authState: AuthState): void {
 async function refreshAuthState(): Promise<void> {
 	try {
 		applyAuthState(await api.getAuthState());
+		await refreshRecentWorkspaces();
 	} catch (error) {
 		loginError.textContent = errorMessage(error);
 		render();
+	}
+}
+
+async function refreshRecentWorkspaces(): Promise<void> {
+	try {
+		state.recentWorkspaces = await api.listRecentWorkspaces();
+		renderRecentWorkspaces();
+		renderStatus();
+	} catch (error) {
+		state.recentWorkspaces = [];
+		renderRecentWorkspaces();
+		renderStatus();
 	}
 }
 
@@ -675,21 +999,32 @@ async function applyPendingModelSelection(): Promise<void> {
 	}
 }
 
-async function submitPrompt(text: string): Promise<void> {
+async function submitPrompt(text: string, streamingBehavior?: "steer" | "followUp"): Promise<void> {
 	const trimmed = text.trim();
 	if (!trimmed || !state.cwd || !state.authenticated) return;
-	setBusy("Sending prompt", true);
+	const selected = selectedCards();
+	const queueing = state.busy;
+	if (!queueing) {
+		state.loadingCardIds = new Set(selected.map((card) => card.id));
+		setBusy("Sending prompt", true);
+		renderCards();
+	}
 	try {
 		await api.sendPrompt({
 			text: trimmed,
-			selectedCards: selectedCards().map(cardContext),
+			selectedCards: selected.map(cardContext),
+			streamingBehavior,
 		});
 		chatInput.value = "";
 	} catch (error) {
 		addSystemMessage(errorMessage(error));
 		showToast(errorMessage(error));
 	} finally {
-		setBusy("Ready", false);
+		if (!queueing) {
+			state.loadingCardIds.clear();
+			setBusy("Ready", false);
+			renderCards();
+		}
 	}
 }
 
@@ -709,6 +1044,12 @@ function handleRendererEvent(event: MainToRendererEvent): void {
 	if (event.type === "assistant-stream") {
 		state.streaming = { id: event.id, text: event.text };
 		renderChat();
+		return;
+	}
+	if (event.type === "queue-update") {
+		state.queuedSteering = [...event.steering];
+		state.queuedFollowUp = [...event.followUp];
+		renderQueue();
 		return;
 	}
 	if (event.type === "canvas-card") {
@@ -755,12 +1096,105 @@ function addSystemMessage(text: string): void {
 function upsertCard(card: CanvasCard): void {
 	const index = state.cards.findIndex((candidate) => candidate.id === card.id);
 	if (index === -1) {
-		state.cards.push(card);
+		state.cards.push({
+			...card,
+			position: resolveNewCardPosition(card.position, state.cards),
+		});
 	} else {
 		state.cards[index] = card;
 	}
+	state.loadingCardIds.delete(card.id);
 	render();
 	scheduleSaveBoard();
+}
+
+function resolveNewCardPosition(position: CanvasCardPosition, cards: CanvasCard[]): CanvasCardPosition {
+	const initial = normalizePosition(position);
+	if (!overlapsAny(initial, cards)) {
+		return initial;
+	}
+
+	const rowCards = cards
+		.map((card) => card.position)
+		.filter((candidate) => rangesOverlap(candidate.y, candidate.y + candidate.h, initial.y, initial.y + initial.h));
+	if (rowCards.length > 0) {
+		const rowX = Math.max(...rowCards.map((candidate) => candidate.x + candidate.w)) + CARD_PLACEMENT_GAP;
+		const rowY = Math.min(...rowCards.map((candidate) => candidate.y));
+		const rowPosition = normalizePosition({ ...initial, x: rowX, y: rowY });
+		if (!overlapsAny(rowPosition, cards)) {
+			return rowPosition;
+		}
+	}
+
+	for (const candidate of placementCandidates(initial, cards)) {
+		if (!overlapsAny(candidate, cards)) {
+			return candidate;
+		}
+	}
+
+	const rightEdge = Math.max(...cards.map((card) => card.position.x + card.position.w), initial.x);
+	return normalizePosition({ ...initial, x: rightEdge + CARD_PLACEMENT_GAP });
+}
+
+function placementCandidates(position: CanvasCardPosition, cards: CanvasCard[]): CanvasCardPosition[] {
+	const minX = Math.min(position.x, ...cards.map((card) => card.position.x), 72);
+	const minY = Math.min(position.y, ...cards.map((card) => card.position.y), 70);
+	const maxRight = Math.max(position.x + position.w, ...cards.map((card) => card.position.x + card.position.w));
+	const maxBottom = Math.max(position.y + position.h, ...cards.map((card) => card.position.y + card.position.h));
+	const columnStep = position.w + CARD_PLACEMENT_GAP;
+	const rowStep = position.h + CARD_PLACEMENT_GAP;
+	const columnCount = Math.max(4, Math.ceil((maxRight - minX) / columnStep) + 3);
+	const rowCount = Math.max(4, Math.ceil((maxBottom - minY) / rowStep) + 3);
+	const candidates: CanvasCardPosition[] = [];
+
+	for (const card of cards) {
+		candidates.push(
+			normalizePosition({ ...position, x: card.position.x + card.position.w + CARD_PLACEMENT_GAP, y: card.position.y }),
+		);
+		candidates.push(
+			normalizePosition({ ...position, x: card.position.x, y: card.position.y + card.position.h + CARD_PLACEMENT_GAP }),
+		);
+	}
+
+	for (let row = 0; row < rowCount; row += 1) {
+		for (let column = 0; column < columnCount; column += 1) {
+			candidates.push(
+				normalizePosition({
+					...position,
+					x: minX + column * columnStep,
+					y: minY + row * rowStep,
+				}),
+			);
+		}
+	}
+
+	return candidates;
+}
+
+function normalizePosition(position: CanvasCardPosition): CanvasCardPosition {
+	return {
+		x: Math.round(position.x),
+		y: Math.round(position.y),
+		w: Math.round(position.w),
+		h: Math.round(position.h),
+	};
+}
+
+function overlapsAny(position: CanvasCardPosition, cards: CanvasCard[]): boolean {
+	return cards.some((card) => positionsOverlap(position, card.position, CARD_PLACEMENT_GAP));
+}
+
+function positionsOverlap(a: CanvasCardPosition, b: CanvasCardPosition, gap: number): boolean {
+	return (
+		a.x < b.x + b.w + gap &&
+		a.x + a.w + gap > b.x &&
+		a.y < b.y + b.h + gap &&
+		a.y + a.h + gap > b.y
+	);
+}
+
+function rangesOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
+	return aStart < bEnd && aEnd > bStart;
 }
 
 function selectedCards(): CanvasCard[] {
@@ -773,6 +1207,8 @@ function cardContext(card: CanvasCard): PromptCardContext {
 		type: card.type,
 		title: card.title,
 		body: card.body,
+		position: card.position,
+		kept: card.kept,
 	};
 }
 
@@ -787,7 +1223,7 @@ function toggleSelection(id: string, additive: boolean): void {
 }
 
 function beginCardDrag(event: PointerEvent): void {
-	if (!state.authenticated || event.button !== 0 || window.innerWidth <= 860) return;
+	if (!state.authenticated || event.button !== 0) return;
 	const target = event.target;
 	if (!(target instanceof Element)) return;
 	if (target.closest("[data-action]")) return;
@@ -795,6 +1231,7 @@ function beginCardDrag(event: PointerEvent): void {
 	if (!cardElement?.dataset.id) return;
 	const card = state.cards.find((candidate) => candidate.id === cardElement.dataset.id);
 	if (!card) return;
+	event.preventDefault();
 	cardDrag = {
 		id: card.id,
 		pointerId: event.pointerId,
@@ -812,11 +1249,16 @@ function moveCardDrag(event: PointerEvent): void {
 	if (!cardDrag || event.pointerId !== cardDrag.pointerId) return;
 	const card = state.cards.find((candidate) => candidate.id === cardDrag?.id);
 	if (!card) return;
-	const deltaX = event.clientX - cardDrag.startClientX;
-	const deltaY = event.clientY - cardDrag.startClientY;
+	const deltaX = (event.clientX - cardDrag.startClientX) / state.viewport.zoom;
+	const deltaY = (event.clientY - cardDrag.startClientY) / state.viewport.zoom;
 	cardDrag.moved ||= Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4;
 	if (!cardDrag.moved) return;
-	card.position = clampCardPosition(card.position.w, card.position.h, cardDrag.startX + deltaX, cardDrag.startY + deltaY);
+	card.position = {
+		x: Math.round(cardDrag.startX + deltaX),
+		y: Math.round(cardDrag.startY + deltaY),
+		w: card.position.w,
+		h: card.position.h,
+	};
 	updateCardPositionElements(card.id, card.position);
 	scheduleCanvasPaint();
 }
@@ -837,17 +1279,6 @@ function endCardDrag(event: PointerEvent): void {
 	}, 0);
 }
 
-function clampCardPosition(width: number, height: number, x: number, y: number): CanvasCardPosition {
-	const maxX = Math.max(0, canvasShell.clientWidth - width);
-	const maxY = Math.max(0, canvasShell.clientHeight - height);
-	return {
-		x: Math.min(maxX, Math.max(0, Math.round(x))),
-		y: Math.min(maxY, Math.max(0, Math.round(y))),
-		w: width,
-		h: height,
-	};
-}
-
 function updateCardPositionElements(id: string, position: CanvasCardPosition): void {
 	for (const element of cardElements(id)) {
 		setCardPosition(element, position);
@@ -856,6 +1287,63 @@ function updateCardPositionElements(id: string, position: CanvasCardPosition): v
 
 function cardElements(id: string): HTMLElement[] {
 	return Array.from(document.querySelectorAll<HTMLElement>(".canvas-card")).filter((element) => element.dataset.id === id);
+}
+
+function beginCanvasPan(event: PointerEvent): void {
+	if (event.button !== 0 || cardDrag) return;
+	const target = event.target;
+	if (!(target instanceof Element)) return;
+	if (target.closest(".canvas-card")) return;
+	canvasPan = {
+		pointerId: event.pointerId,
+		startClientX: event.clientX,
+		startClientY: event.clientY,
+		startX: state.viewport.x,
+		startY: state.viewport.y,
+	};
+	canvasShell.setPointerCapture(event.pointerId);
+	canvasShell.classList.add("panning");
+	event.preventDefault();
+}
+
+function moveCanvasPan(event: PointerEvent): void {
+	if (!canvasPan || event.pointerId !== canvasPan.pointerId) return;
+	state.viewport.x = Math.round(canvasPan.startX + event.clientX - canvasPan.startClientX);
+	state.viewport.y = Math.round(canvasPan.startY + event.clientY - canvasPan.startClientY);
+	renderCanvasViewport();
+	scheduleCanvasPaint();
+	event.preventDefault();
+}
+
+function endCanvasPan(event: PointerEvent): void {
+	if (!canvasPan || event.pointerId !== canvasPan.pointerId) return;
+	canvasPan = undefined;
+	canvasShell.classList.remove("panning");
+}
+
+function zoomCanvas(event: WheelEvent): void {
+	const rect = canvasShell.getBoundingClientRect();
+	const screenX = event.clientX - rect.left;
+	const screenY = event.clientY - rect.top;
+	const worldX = (screenX - state.viewport.x) / state.viewport.zoom;
+	const worldY = (screenY - state.viewport.y) / state.viewport.zoom;
+	const unclampedZoom = state.viewport.zoom * Math.exp(-event.deltaY * CANVAS_ZOOM_SENSITIVITY);
+	const nextZoom = Math.min(MAX_CANVAS_ZOOM, Math.max(MIN_CANVAS_ZOOM, unclampedZoom));
+	state.viewport.x = Math.round(screenX - worldX * nextZoom);
+	state.viewport.y = Math.round(screenY - worldY * nextZoom);
+	state.viewport.zoom = nextZoom;
+	renderCanvasViewport();
+	scheduleCanvasPaint();
+	event.preventDefault();
+}
+
+function resetCanvasViewport(): void {
+	state.viewport = {
+		x: 0,
+		y: 0,
+		zoom: 1,
+	};
+	renderCanvasViewport();
 }
 
 function keepSelected(): void {
@@ -874,10 +1362,23 @@ function deleteSelected(): void {
 	if (!state.authenticated) return;
 	if (state.selectedIds.size === 0) return;
 	state.cards = state.cards.filter((card) => !state.selectedIds.has(card.id));
+	for (const id of state.selectedIds) {
+		state.loadingCardIds.delete(id);
+	}
 	state.selectedIds.clear();
 	render();
 	scheduleSaveBoard();
 	showToast("Selected item deleted.");
+}
+
+function deleteCard(id: string): void {
+	if (!state.authenticated) return;
+	state.cards = state.cards.filter((card) => card.id !== id);
+	state.selectedIds.delete(id);
+	state.loadingCardIds.delete(id);
+	render();
+	scheduleSaveBoard();
+	showToast("Canvas item closed.");
 }
 
 function openCard(id: string): void {
@@ -931,6 +1432,7 @@ function setBusy(text: string, busy: boolean): void {
 	state.statusText = text;
 	state.busy = busy;
 	renderStatus();
+	renderChat();
 }
 
 function showToast(text: string): void {
@@ -946,6 +1448,11 @@ function compactPath(path: string): string {
 	const parts = path.split(/[\\/]/).filter(Boolean);
 	if (parts.length <= 2) return path;
 	return `${parts.at(-2)}/${parts.at(-1)}`;
+}
+
+function workspaceLabel(workspace: RecentWorkspace): string {
+	const path = compactPath(workspace.path);
+	return workspace.name === path ? path : `${workspace.name} - ${path}`;
 }
 
 function modelValue(model: ModelSummary): string {
@@ -976,20 +1483,48 @@ cardHost.addEventListener("click", (event) => {
 		if (card) void exportCards([card]);
 		return;
 	}
+	if (action?.dataset.action === "close") {
+		deleteCard(cardElement.dataset.id);
+		return;
+	}
 	toggleSelection(cardElement.dataset.id, event.shiftKey || event.metaKey || event.ctrlKey);
 });
 cardHost.addEventListener("pointerdown", beginCardDrag);
 cardHost.addEventListener("pointermove", moveCardDrag);
 cardHost.addEventListener("pointerup", endCardDrag);
 cardHost.addEventListener("pointercancel", endCardDrag);
+canvasShell.addEventListener("pointerdown", beginCanvasPan);
+canvasShell.addEventListener("pointermove", moveCanvasPan);
+canvasShell.addEventListener("pointerup", endCanvasPan);
+canvasShell.addEventListener("pointercancel", endCanvasPan);
+canvasShell.addEventListener("wheel", zoomCanvas, { passive: false });
 
 composer.addEventListener("submit", (event) => {
 	event.preventDefault();
-	void submitPrompt(chatInput.value);
+	void submitPrompt(chatInput.value, state.busy ? "followUp" : undefined);
+});
+
+steerButton.addEventListener("click", () => {
+	void submitPrompt(chatInput.value, "steer");
+});
+
+queueNextButton.addEventListener("click", () => {
+	void submitPrompt(chatInput.value, "followUp");
+});
+
+dockToggleButton.addEventListener("click", () => {
+	setChatDockPosition(state.chatDockPosition === "right" ? "bottom" : "right");
 });
 
 openFolderButton.addEventListener("click", () => {
 	void openWorkspace();
+});
+
+recentWorkspaceSelect.addEventListener("change", () => {
+	const path = recentWorkspaceSelect.value;
+	recentWorkspaceSelect.value = "";
+	if (!path) return;
+	void startSession(path);
 });
 
 loginForm.addEventListener("submit", (event) => {
@@ -1009,7 +1544,9 @@ loginModel.addEventListener("change", () => {
 newBoardButton.addEventListener("click", () => {
 	state.cards = [];
 	state.selectedIds.clear();
+	state.loadingCardIds.clear();
 	state.shareReady = false;
+	resetCanvasViewport();
 	render();
 	scheduleSaveBoard();
 	addSystemMessage("New blank canvas ready.");

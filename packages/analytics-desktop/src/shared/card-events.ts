@@ -25,6 +25,9 @@ export function normalizeSessionEvent(event: AgentSessionEvent): MainToRendererE
 	if (event.type === "agent_end") {
 		return [{ type: "status", text: event.willRetry ? "Retrying" : "Ready", busy: event.willRetry }];
 	}
+	if (event.type === "queue_update") {
+		return [{ type: "queue-update", steering: event.steering, followUp: event.followUp }];
+	}
 	if (event.type === "message_start" && messageRole(event.message) === "user") {
 		return [
 			{

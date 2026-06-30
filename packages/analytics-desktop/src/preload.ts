@@ -7,6 +7,7 @@ import {
 	type LoginProviderRequest,
 	type MainToRendererEvent,
 	type ModelSummary,
+	type RecentWorkspace,
 	type SaveBoardRequest,
 	type SendPromptRequest,
 	type SessionSnapshot,
@@ -18,6 +19,7 @@ const api: AnalyticsDesktopApi = {
 	getAuthState: async () => ipcRenderer.invoke(IPC.getAuthState) as Promise<AuthState>,
 	loginProvider: async (request: LoginProviderRequest) =>
 		ipcRenderer.invoke(IPC.loginProvider, request) as Promise<AuthState>,
+	listRecentWorkspaces: async () => ipcRenderer.invoke(IPC.listRecentWorkspaces) as Promise<RecentWorkspace[]>,
 	selectWorkspaceFolder: async () =>
 		ipcRenderer.invoke(IPC.selectWorkspaceFolder) as Promise<WorkspaceFolder | undefined>,
 	startSession: async (cwd: string) => ipcRenderer.invoke(IPC.startSession, cwd) as Promise<SessionSnapshot>,

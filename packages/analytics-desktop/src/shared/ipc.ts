@@ -3,6 +3,7 @@ import type { CanvasCard, PersistedBoard, PromptCardContext } from "./canvas.ts"
 export const IPC = {
 	getAuthState: "analytics:get-auth-state",
 	loginProvider: "analytics:login-provider",
+	listRecentWorkspaces: "analytics:list-recent-workspaces",
 	selectWorkspaceFolder: "analytics:select-workspace-folder",
 	startSession: "analytics:start-session",
 	sendPrompt: "analytics:send-prompt",
@@ -52,6 +53,12 @@ export interface WorkspaceFolder {
 	path: string;
 }
 
+export interface RecentWorkspace {
+	path: string;
+	name: string;
+	openedAt: string;
+}
+
 export interface SessionSnapshot {
 	cwd: string;
 	sessionId: string;
@@ -64,6 +71,7 @@ export interface SessionSnapshot {
 export interface SendPromptRequest {
 	text: string;
 	selectedCards: PromptCardContext[];
+	streamingBehavior?: "steer" | "followUp";
 }
 
 export interface SetModelRequest {
@@ -94,12 +102,14 @@ export type MainToRendererEvent =
 	| { type: "assistant-stream"; id: string; text: string }
 	| { type: "canvas-card"; card: CanvasCard }
 	| { type: "model-selected"; model: ModelSummary }
+	| { type: "queue-update"; steering: readonly string[]; followUp: readonly string[] }
 	| { type: "exported-report"; filePath: string }
 	| ChatMessageEvent;
 
 export interface AnalyticsDesktopApi {
 	getAuthState(): Promise<AuthState>;
 	loginProvider(request: LoginProviderRequest): Promise<AuthState>;
+	listRecentWorkspaces(): Promise<RecentWorkspace[]>;
 	selectWorkspaceFolder(): Promise<WorkspaceFolder | undefined>;
 	startSession(cwd: string): Promise<SessionSnapshot>;
 	sendPrompt(request: SendPromptRequest): Promise<void>;

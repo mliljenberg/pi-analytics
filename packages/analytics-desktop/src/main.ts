@@ -11,6 +11,7 @@ import {
 	IPC,
 	type LoginProviderRequest,
 	type MainToRendererEvent,
+	type RecentWorkspace,
 	type SaveBoardRequest,
 	type SendPromptRequest,
 	type SessionSnapshot,
@@ -87,6 +88,10 @@ ipcMain.handle(IPC.getAuthState, async (): Promise<AuthState> => {
 	return getAgentController().getAuthState();
 });
 
+ipcMain.handle(IPC.listRecentWorkspaces, async (): Promise<RecentWorkspace[]> => {
+	return getBoardStore().listRecentWorkspaces();
+});
+
 ipcMain.handle(IPC.loginProvider, async (_event, request: unknown): Promise<AuthState> => {
 	if (!isLoginProviderRequest(request)) {
 		throw new Error("Invalid login request.");
@@ -98,14 +103,16 @@ ipcMain.handle(IPC.startSession, async (_event, cwd: unknown): Promise<SessionSn
 	if (typeof cwd !== "string" || cwd.length === 0) {
 		throw new Error("A workspace folder path is required.");
 	}
-	return getAgentController().start(cwd);
+	const snapshot = await getAgentController().start(cwd);
+	await getBoardStore().rememberWorkspace(cwd);
+	return snapshot;
 });
 
 ipcMain.handle(IPC.sendPrompt, async (_event, request: unknown): Promise<void> => {
 	if (!isSendPromptRequest(request)) {
 		throw new Error("Invalid prompt request.");
 	}
-	await getAgentController().prompt(request.text, request.selectedCards);
+	await getAgentController().prompt(request.text, request.selectedCards, request.streamingBehavior);
 });
 
 ipcMain.handle(IPC.abortPrompt, async (): Promise<void> => {
@@ -162,7 +169,14 @@ app.on("window-all-closed", () => {
 });
 
 function isSendPromptRequest(value: unknown): value is SendPromptRequest {
-	return isRecord(value) && typeof value.text === "string" && Array.isArray(value.selectedCards);
+	return (
+		isRecord(value) &&
+		typeof value.text === "string" &&
+		Array.isArray(value.selectedCards) &&
+		(value.streamingBehavior === undefined ||
+			value.streamingBehavior === "steer" ||
+			value.streamingBehavior === "followUp")
+	);
 }
 
 function isSetModelRequest(value: unknown): value is SetModelRequest {

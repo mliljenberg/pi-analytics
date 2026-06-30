@@ -46,6 +46,7 @@ export class AgentController {
 	private session: AgentSession | undefined;
 	private unsubscribe: (() => void) | undefined;
 	private nextPositionIndex = 0;
+	private promptEditTarget: PromptCardContext | undefined;
 	private currentTurnRenderedCanvas = false;
 	private latestFinalAssistantText:
 		| {
@@ -139,6 +140,7 @@ export class AgentController {
 				createRenderCanvasTool({
 					emit: this.emit,
 					nextPosition: () => this.nextPosition(),
+					editTarget: () => this.promptEditTarget,
 					onRender: () => {
 						this.currentTurnRenderedCanvas = true;
 					},
@@ -168,14 +170,25 @@ export class AgentController {
 		};
 	}
 
-	async prompt(text: string, selectedCards: PromptCardContext[]): Promise<void> {
+	async prompt(
+		text: string,
+		selectedCards: PromptCardContext[],
+		streamingBehavior?: "steer" | "followUp",
+	): Promise<void> {
 		this.requireConfiguredAuth();
 		const session = this.requireSession();
 		this.currentTurnRenderedCanvas = false;
 		this.latestFinalAssistantText = undefined;
+		this.promptEditTarget = selectedCards.length === 1 ? selectedCards[0] : undefined;
 		const promptText =
-			selectedCards.length > 0 ? `${text}\n\nSelected canvas context:\n${formatSelectedCards(selectedCards)}` : text;
-		await session.prompt(promptText);
+			selectedCards.length > 0
+				? `${text}\n\nSelected canvas context:\n${formatSelectedCards(selectedCards)}\n\n${formatCanvasRenderInstruction(selectedCards)}`
+				: text;
+		try {
+			await session.prompt(promptText, { streamingBehavior });
+		} finally {
+			this.promptEditTarget = undefined;
+		}
 	}
 
 	async abort(): Promise<void> {
@@ -313,15 +326,17 @@ export class AgentController {
 		if (isClarifyingQuestion(this.latestFinalAssistantText.text)) {
 			return;
 		}
+		const target = this.promptEditTarget;
 		this.currentTurnRenderedCanvas = true;
 		this.emit({
 			type: "canvas-card",
 			card: createTextCanvasCard({
-				id: `canvas-${this.latestFinalAssistantText.id}`,
+				id: target?.id ?? `canvas-${this.latestFinalAssistantText.id}`,
 				title: "Answer",
 				subtitle: "Agent output",
 				body: this.latestFinalAssistantText.text,
-				position: this.nextPosition(),
+				position: target?.position ?? this.nextPosition(),
+				kept: target?.kept,
 				sourceMessageIds: [this.latestFinalAssistantText.id],
 			}),
 		});
@@ -366,7 +381,26 @@ function isApiKeyLoginProvider(providerId: string, oauthProviderIds: ReadonlySet
 }
 
 function formatSelectedCards(cards: PromptCardContext[]): string {
-	return cards.map((card) => `- ${card.title} (${card.type}): ${card.body}`).join("\n");
+	return cards
+		.map(
+			(card) => `- ${card.title} (${card.type}, id ${card.id}, ${card.position.w}x${card.position.h}): ${card.body}`,
+		)
+		.join("\n");
+}
+
+function formatCanvasRenderInstruction(cards: PromptCardContext[]): string {
+	if (cards.length === 1) {
+		return [
+			"Canvas render behavior:",
+			"- Treat the selected canvas item as the current item.",
+			"- If the user asks to revise, edit, change, fix, refine, or update it, call render_canvas and let it update the selected item in place.",
+			"- Set render_canvas mode to create only if the user explicitly asks for a new, additional, duplicate, or separate canvas item.",
+		].join("\n");
+	}
+	return [
+		"Canvas render behavior:",
+		"- Multiple canvas items are selected, so render_canvas creates a new result unless the user clearly asks for one specific selected item to be changed.",
+	].join("\n");
 }
 
 function messageId(message: AgentMessage): string {

@@ -1,7 +1,7 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { defineTool } from "@earendil-works/pi-coding-agent/core/extensions";
 import { type Static, Type } from "typebox";
-import type { CanvasCard, CanvasCardPosition, CanvasCardType } from "../shared/canvas.ts";
+import type { CanvasCard, CanvasCardPosition, CanvasCardType, PromptCardContext } from "../shared/canvas.ts";
 import type { MainToRendererEvent } from "../shared/ipc.ts";
 
 const canvasArtifactSchema = Type.Object({
@@ -42,17 +42,25 @@ const canvasArtifactSchema = Type.Object({
 			maximum: 720,
 		}),
 	),
+	mode: Type.Optional(
+		Type.Union([Type.Literal("update"), Type.Literal("create")], {
+			description:
+				"Use update for revisions to the selected canvas item. Use create only when the user explicitly asks for a new, additional, or separate canvas item.",
+		}),
+	),
 });
 
 type CanvasArtifactInput = Static<typeof canvasArtifactSchema>;
 
 interface RenderCanvasDetails {
 	cardId: string;
+	mode: "created" | "updated";
 }
 
 interface CreateRenderCanvasToolOptions {
 	emit: (event: MainToRendererEvent) => void;
 	nextPosition: () => CanvasCardPosition;
+	editTarget: () => PromptCardContext | undefined;
 	onRender?: () => void;
 }
 
@@ -62,13 +70,14 @@ interface TextCanvasCardOptions {
 	subtitle: string;
 	body: string;
 	position: CanvasCardPosition;
+	kept?: boolean;
 	sourceMessageIds: string[];
 }
 
 const DEFAULT_CARD_WIDTH = 460;
 const DEFAULT_CARD_HEIGHT = 320;
 
-export function createRenderCanvasTool({ emit, nextPosition, onRender }: CreateRenderCanvasToolOptions) {
+export function createRenderCanvasTool({ emit, nextPosition, editTarget, onRender }: CreateRenderCanvasToolOptions) {
 	return defineTool({
 		name: "render_canvas",
 		label: "render canvas",
@@ -81,18 +90,23 @@ export function createRenderCanvasTool({ emit, nextPosition, onRender }: CreateR
 			"Use render_canvas only for final or presentation-ready output.",
 			"Do not use render_canvas for tool calls, thinking, scratch work, or intermediate results.",
 			"When visual output helps, call render_canvas with a self-contained HTML or SVG fragment instead of describing the layout in chat.",
+			"When exactly one canvas item is selected, render_canvas updates that item in place by default. Set mode to create only if the user explicitly asked for a new, additional, or separate canvas item.",
 			"Use renderer/src/canvas-artifacts.css as the style guide for generated HTML: prefer shared classes such as artifact, artifact-header, artifact-title, artifact-subtitle, artifact-grid, artifact-panel, artifact-label, artifact-value, artifact-text, artifact-list, artifact-table, artifact-bar, artifact-track, artifact-fill, and artifact-status for consistent structure. Inline styles are allowed when needed for artifact-specific layout, emphasis, SVG styling, or values like bar widths, but keep them consistent with the app palette, spacing, typography, and 8px radius.",
 			"After render_canvas succeeds, do not repeat the rendered artifact in chat unless the user asks for text output too.",
 		],
 		parameters: canvasArtifactSchema,
 		executionMode: "sequential",
 		async execute(toolCallId, params): Promise<AgentToolResult<RenderCanvasDetails>> {
-			const card = createCanvasCard(toolCallId, params, nextPosition());
+			const target = params.mode === "create" ? undefined : editTarget();
+			const card = createCanvasCard(toolCallId, params, target?.position ?? nextPosition(), target);
+			const mode = target ? "updated" : "created";
 			onRender?.();
 			emit({ type: "canvas-card", card });
 			return {
-				content: [{ type: "text", text: `Rendered "${card.title}" on the canvas.` }],
-				details: { cardId: card.id },
+				content: [
+					{ type: "text", text: `${mode === "updated" ? "Updated" : "Rendered"} "${card.title}" on the canvas.` },
+				],
+				details: { cardId: card.id, mode },
 				terminate: true,
 			};
 		},
@@ -105,6 +119,7 @@ export function createTextCanvasCard({
 	subtitle,
 	body,
 	position,
+	kept = false,
 	sourceMessageIds,
 }: TextCanvasCardOptions): CanvasCard {
 	const normalizedBody = normalizeText(body, "Completed.");
@@ -114,37 +129,43 @@ export function createTextCanvasCard({
 		title: normalizeText(title, "Answer"),
 		subtitle,
 		body: normalizedBody,
-		status: "complete",
-		statusLabel: "Complete",
+		status: kept ? "kept" : "complete",
+		statusLabel: kept ? "Kept" : "Complete",
 		position,
-		kept: false,
+		kept,
 		points: splitSummaryPoints(normalizedBody),
 		sourceMessageIds,
 	};
 }
 
-function createCanvasCard(toolCallId: string, params: CanvasArtifactInput, position: CanvasCardPosition): CanvasCard {
+function createCanvasCard(
+	toolCallId: string,
+	params: CanvasArtifactInput,
+	position: CanvasCardPosition,
+	editTarget: PromptCardContext | undefined,
+): CanvasCard {
 	const html = params.html?.trim();
 	const type = canvasCardType(params.format, html);
 	const title = normalizeText(params.title, "Canvas artifact");
 	const subtitle = normalizeText(params.subtitle, type === "html" ? "Rendered artifact" : "Agent output");
 	const body = normalizeText(params.body, html ? "Rendered visual artifact." : "");
+	const kept = editTarget?.kept ?? false;
 	return {
-		id: `canvas-${toolCallId}`,
+		id: editTarget?.id ?? `canvas-${toolCallId}`,
 		type,
 		title,
 		subtitle,
 		body,
 		html,
-		status: "complete",
-		statusLabel: "Complete",
+		status: kept ? "kept" : "complete",
+		statusLabel: kept ? "Kept" : "Complete",
 		position: {
 			x: position.x,
 			y: position.y,
 			w: clampDimension(params.width, position.w || DEFAULT_CARD_WIDTH, 240, 960),
 			h: clampDimension(params.height, position.h || DEFAULT_CARD_HEIGHT, 160, 720),
 		},
-		kept: false,
+		kept,
 		points: type === "summary" ? splitSummaryPoints(body) : undefined,
 		sourceMessageIds: [],
 		toolCallId,
