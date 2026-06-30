@@ -143,8 +143,6 @@ const modelSelect = requireElement<HTMLSelectElement>("modelSelect");
 const recentWorkspaceSelect = requireElement<HTMLSelectElement>("recentWorkspaceSelect");
 const openFolderButton = requireElement<HTMLButtonElement>("openFolderButton");
 const newBoardButton = requireElement<HTMLButtonElement>("newBoardButton");
-const abortButton = requireElement<HTMLButtonElement>("abortButton");
-const reportButton = requireElement<HTMLButtonElement>("reportButton");
 const canvasShell = requireElement<HTMLDivElement>("canvasShell");
 const workspaceCanvas = requireElement<HTMLCanvasElement>("workspaceCanvas");
 const cardHost = requireElement<HTMLDivElement>("cardHost");
@@ -292,8 +290,6 @@ function renderStatus(): void {
 	const locked = !state.authenticated;
 	openFolderButton.disabled = locked;
 	newBoardButton.disabled = locked;
-	abortButton.disabled = locked || !activeBusy;
-	reportButton.disabled = locked || !state.cwd || state.busy;
 	chatInput.disabled = locked || !state.cwd;
 	modelSelect.disabled = locked || !state.cwd || state.busy || state.models.length === 0;
 	recentWorkspaceSelect.disabled = locked || state.busy || state.recentWorkspaces.length === 0;
@@ -1824,19 +1820,6 @@ newBoardButton.addEventListener("click", () => {
 	render();
 	scheduleSaveBoard();
 	addSystemMessage("New blank canvas ready.");
-});
-
-reportButton.addEventListener("click", () => {
-	void submitPrompt("Build a board-ready report from this workspace. Use concise sections and cite the files or tool results you relied on.");
-});
-
-abortButton.addEventListener("click", () => {
-	const activeTask = activeTaskView();
-	if (activeTask && isTaskBusy(activeTask)) {
-		void api.abortTask(activeTask.id);
-		return;
-	}
-	void api.abortPrompt();
 });
 
 modelSelect.addEventListener("change", () => {
