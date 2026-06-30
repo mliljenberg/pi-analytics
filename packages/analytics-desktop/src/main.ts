@@ -16,6 +16,7 @@ import {
 	type SendPromptRequest,
 	type SessionSnapshot,
 	type SetModelRequest,
+	type TaskPromptRequest,
 	type WorkspaceFolder,
 } from "./shared/ipc.ts";
 import { isRecord } from "./shared/text.ts";
@@ -115,8 +116,22 @@ ipcMain.handle(IPC.sendPrompt, async (_event, request: unknown): Promise<void> =
 	await getAgentController().prompt(request.text, request.selectedCards, request.streamingBehavior);
 });
 
+ipcMain.handle(IPC.sendTaskPrompt, async (_event, request: unknown): Promise<void> => {
+	if (!isTaskPromptRequest(request)) {
+		throw new Error("Invalid task prompt request.");
+	}
+	await getAgentController().promptTask(request.taskId, request.text, request.streamingBehavior);
+});
+
 ipcMain.handle(IPC.abortPrompt, async (): Promise<void> => {
 	await getAgentController().abort();
+});
+
+ipcMain.handle(IPC.abortTask, async (_event, taskId: unknown): Promise<void> => {
+	if (typeof taskId !== "string" || taskId.length === 0) {
+		throw new Error("A task id is required.");
+	}
+	await getAgentController().abortTask(taskId);
 });
 
 ipcMain.handle(IPC.listModels, async () => {
@@ -173,6 +188,17 @@ function isSendPromptRequest(value: unknown): value is SendPromptRequest {
 		isRecord(value) &&
 		typeof value.text === "string" &&
 		Array.isArray(value.selectedCards) &&
+		(value.streamingBehavior === undefined ||
+			value.streamingBehavior === "steer" ||
+			value.streamingBehavior === "followUp")
+	);
+}
+
+function isTaskPromptRequest(value: unknown): value is TaskPromptRequest {
+	return (
+		isRecord(value) &&
+		typeof value.taskId === "string" &&
+		typeof value.text === "string" &&
 		(value.streamingBehavior === undefined ||
 			value.streamingBehavior === "steer" ||
 			value.streamingBehavior === "followUp")

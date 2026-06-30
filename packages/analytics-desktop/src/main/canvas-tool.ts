@@ -51,6 +51,7 @@ const canvasArtifactSchema = Type.Object({
 });
 
 type CanvasArtifactInput = Static<typeof canvasArtifactSchema>;
+type CanvasCardMetadata = Pick<CanvasCard, "taskId" | "taskGroupId" | "taskSessionId">;
 
 interface RenderCanvasDetails {
 	cardId: string;
@@ -62,6 +63,8 @@ interface CreateRenderCanvasToolOptions {
 	nextPosition: () => CanvasCardPosition;
 	editTarget: () => PromptCardContext | undefined;
 	onRender?: () => void;
+	cardMetadata?: Partial<CanvasCardMetadata>;
+	forceUpdateTarget?: boolean;
 }
 
 interface TextCanvasCardOptions {
@@ -72,12 +75,20 @@ interface TextCanvasCardOptions {
 	position: CanvasCardPosition;
 	kept?: boolean;
 	sourceMessageIds: string[];
+	cardMetadata?: Partial<CanvasCardMetadata>;
 }
 
 const DEFAULT_CARD_WIDTH = 460;
 const DEFAULT_CARD_HEIGHT = 320;
 
-export function createRenderCanvasTool({ emit, nextPosition, editTarget, onRender }: CreateRenderCanvasToolOptions) {
+export function createRenderCanvasTool({
+	emit,
+	nextPosition,
+	editTarget,
+	onRender,
+	cardMetadata,
+	forceUpdateTarget = false,
+}: CreateRenderCanvasToolOptions) {
 	return defineTool({
 		name: "render_canvas",
 		label: "render canvas",
@@ -97,8 +108,9 @@ export function createRenderCanvasTool({ emit, nextPosition, editTarget, onRende
 		parameters: canvasArtifactSchema,
 		executionMode: "sequential",
 		async execute(toolCallId, params): Promise<AgentToolResult<RenderCanvasDetails>> {
-			const target = params.mode === "create" ? undefined : editTarget();
+			const target = forceUpdateTarget ? editTarget() : params.mode === "create" ? undefined : editTarget();
 			const card = createCanvasCard(toolCallId, params, target?.position ?? nextPosition(), target);
+			Object.assign(card, cardMetadata);
 			const mode = target ? "updated" : "created";
 			onRender?.();
 			emit({ type: "canvas-card", card });
@@ -121,6 +133,7 @@ export function createTextCanvasCard({
 	position,
 	kept = false,
 	sourceMessageIds,
+	cardMetadata,
 }: TextCanvasCardOptions): CanvasCard {
 	const normalizedBody = normalizeText(body, "Completed.");
 	return {
@@ -135,6 +148,7 @@ export function createTextCanvasCard({
 		kept,
 		points: splitSummaryPoints(normalizedBody),
 		sourceMessageIds,
+		...cardMetadata,
 	};
 }
 

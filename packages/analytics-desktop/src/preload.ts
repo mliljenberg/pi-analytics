@@ -12,6 +12,7 @@ import {
 	type SendPromptRequest,
 	type SessionSnapshot,
 	type SetModelRequest,
+	type TaskPromptRequest,
 	type WorkspaceFolder,
 } from "./shared/ipc.ts";
 
@@ -26,8 +27,14 @@ const api: AnalyticsDesktopApi = {
 	sendPrompt: async (request: SendPromptRequest) => {
 		await ipcRenderer.invoke(IPC.sendPrompt, request);
 	},
+	sendTaskPrompt: async (request: TaskPromptRequest) => {
+		await ipcRenderer.invoke(IPC.sendTaskPrompt, request);
+	},
 	abortPrompt: async () => {
 		await ipcRenderer.invoke(IPC.abortPrompt);
+	},
+	abortTask: async (taskId: string) => {
+		await ipcRenderer.invoke(IPC.abortTask, taskId);
 	},
 	listModels: async () => ipcRenderer.invoke(IPC.listModels) as Promise<ModelSummary[]>,
 	setModel: async (request: SetModelRequest) => {

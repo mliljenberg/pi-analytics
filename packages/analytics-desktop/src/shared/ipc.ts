@@ -7,7 +7,9 @@ export const IPC = {
 	selectWorkspaceFolder: "analytics:select-workspace-folder",
 	startSession: "analytics:start-session",
 	sendPrompt: "analytics:send-prompt",
+	sendTaskPrompt: "analytics:send-task-prompt",
 	abortPrompt: "analytics:abort-prompt",
+	abortTask: "analytics:abort-task",
 	listModels: "analytics:list-models",
 	setModel: "analytics:set-model",
 	saveBoard: "analytics:save-board",
@@ -135,7 +137,9 @@ export interface AnalyticsDesktopApi {
 	selectWorkspaceFolder(): Promise<WorkspaceFolder | undefined>;
 	startSession(cwd: string): Promise<SessionSnapshot>;
 	sendPrompt(request: SendPromptRequest): Promise<void>;
+	sendTaskPrompt(request: TaskPromptRequest): Promise<void>;
 	abortPrompt(): Promise<void>;
+	abortTask(taskId: string): Promise<void>;
 	listModels(): Promise<ModelSummary[]>;
 	setModel(request: SetModelRequest): Promise<void>;
 	saveBoard(request: SaveBoardRequest): Promise<void>;

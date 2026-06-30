@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { getProviders } from "@earendil-works/pi-ai/compat";
@@ -12,16 +13,30 @@ import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
 import { ModelRegistry } from "@earendil-works/pi-coding-agent/core/model-registry";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "@earendil-works/pi-coding-agent/core/provider-display-names";
 import { SessionManager } from "@earendil-works/pi-coding-agent/core/session-manager";
-import type { CanvasCardPosition, PromptCardContext } from "../shared/canvas.ts";
+import type { CanvasCard, CanvasCardPosition, PromptCardContext } from "../shared/canvas.ts";
 import { normalizeSessionEvent } from "../shared/card-events.ts";
-import type { AppDiagnostic, AuthState, MainToRendererEvent, ModelSummary, SessionSnapshot } from "../shared/ipc.ts";
+import type {
+	AppDiagnostic,
+	AuthState,
+	MainToRendererEvent,
+	ModelSummary,
+	SessionSnapshot,
+	TaskSnapshot,
+	TaskStatus,
+} from "../shared/ipc.ts";
 import { isRecord, textFromContent } from "../shared/text.ts";
 import type { BoardStore } from "./board-store.ts";
 import { createRenderCanvasTool, createTextCanvasCard } from "./canvas-tool.ts";
+import { createDispatchParallelTasksTool, type ParallelTaskRequest } from "./task-dispatch-tool.ts";
 
 type EmitEvent = (event: MainToRendererEvent) => void;
 type OpenExternal = (url: string) => Promise<void>;
 type LoginAuthType = "api_key" | "oauth";
+
+interface AgentControllerOptions {
+	authStorage?: AuthStorage;
+	modelRegistry?: ModelRegistry;
+}
 
 const BUILT_IN_MODEL_PROVIDERS = new Set<string>(getProviders());
 
@@ -37,6 +52,31 @@ const POSITION_PRESETS: CanvasCardPosition[] = [
 	{ x: 986, y: 730, w: 340, h: 256 },
 ];
 
+const TASK_AGENT_TOOLS = ["read", "bash", "grep", "find", "ls", "edit", "write", "render_canvas"];
+const MAX_PARALLEL_TASKS = 24;
+
+interface TaskRun {
+	id: string;
+	groupId: string;
+	groupTitle: string;
+	sessionId: string;
+	cardId: string;
+	title: string;
+	instruction: string;
+	targetPaths: string[];
+	requiresWrites: boolean;
+	status: TaskStatus;
+	statusText: string;
+	position: CanvasCardPosition;
+	session?: AgentSession;
+	unsubscribe?: () => void;
+	currentTurnRenderedCanvas: boolean;
+	latestFinalAssistantText?: {
+		id: string;
+		text: string;
+	};
+}
+
 export class AgentController {
 	private readonly boardStore: BoardStore;
 	private readonly emit: EmitEvent;
@@ -45,6 +85,7 @@ export class AgentController {
 	private modelRegistry: ModelRegistry | undefined;
 	private session: AgentSession | undefined;
 	private unsubscribe: (() => void) | undefined;
+	private readonly tasks = new Map<string, TaskRun>();
 	private nextPositionIndex = 0;
 	private promptEditTarget: PromptCardContext | undefined;
 	private currentTurnRenderedCanvas = false;
@@ -55,9 +96,11 @@ export class AgentController {
 		  }
 		| undefined;
 
-	constructor(boardStore: BoardStore, emit: EmitEvent) {
+	constructor(boardStore: BoardStore, emit: EmitEvent, options: AgentControllerOptions = {}) {
 		this.boardStore = boardStore;
 		this.emit = emit;
+		this.authStorage = options.authStorage;
+		this.modelRegistry = options.modelRegistry;
 	}
 
 	getAuthState(): AuthState {
@@ -125,7 +168,11 @@ export class AgentController {
 		await this.disposeSession();
 		this.nextPositionIndex = 0;
 
-		this.services = await createAgentSessionServices({ cwd });
+		this.services = await createAgentSessionServices({
+			cwd,
+			authStorage: this.getAuthStorage(),
+			modelRegistry: this.getModelRegistry(),
+		});
 		const diagnostics: AppDiagnostic[] = this.services.diagnostics.map((diagnostic) => ({
 			type: diagnostic.type,
 			message: diagnostic.message,
@@ -135,8 +182,11 @@ export class AgentController {
 		const { session, modelFallbackMessage } = await createAgentSessionFromServices({
 			services: this.services,
 			sessionManager,
-			tools: ["read", "bash", "grep", "find", "ls", "render_canvas"],
+			tools: ["read", "bash", "grep", "find", "ls", "render_canvas", "dispatch_parallel_tasks"],
 			customTools: [
+				createDispatchParallelTasksTool({
+					dispatch: (groupTitle, tasks) => this.dispatchParallelTasks(groupTitle, tasks),
+				}),
 				createRenderCanvasTool({
 					emit: this.emit,
 					nextPosition: () => this.nextPosition(),
@@ -195,6 +245,32 @@ export class AgentController {
 		await this.session?.abort();
 	}
 
+	async promptTask(taskId: string, text: string, streamingBehavior?: "steer" | "followUp"): Promise<void> {
+		this.requireConfiguredAuth();
+		const task = this.requireTask(taskId);
+		if (!task.session) {
+			throw new Error(`Task "${task.title}" is still starting.`);
+		}
+		const behavior = task.session.isStreaming ? (streamingBehavior ?? "followUp") : streamingBehavior;
+		if (!task.session.isStreaming) {
+			task.status = "working";
+			task.statusText = "Working";
+			task.currentTurnRenderedCanvas = false;
+			task.latestFinalAssistantText = undefined;
+			this.emitTaskUpdate(task);
+			this.emitTaskStatusCard(task, formatTaskWorkingBody(task));
+		}
+		await task.session.prompt(text, { streamingBehavior: behavior });
+	}
+
+	async abortTask(taskId: string): Promise<void> {
+		const task = this.requireTask(taskId);
+		await task.session?.abort();
+		if (task.status === "queued" || task.status === "working") {
+			this.markTaskError(task, "Aborted.");
+		}
+	}
+
 	listModels(): ModelSummary[] {
 		const registry = this.services?.modelRegistry ?? this.getModelRegistry();
 		return registry.getAll().map((model) => this.modelToSummary(model, registry));
@@ -216,6 +292,11 @@ export class AgentController {
 		this.unsubscribe = undefined;
 		await this.session?.dispose();
 		this.session = undefined;
+		for (const task of this.tasks.values()) {
+			task.unsubscribe?.();
+			task.session?.dispose();
+		}
+		this.tasks.clear();
 	}
 
 	private requireSession(): AgentSession {
@@ -223,6 +304,240 @@ export class AgentController {
 			throw new Error("No analytics session is open.");
 		}
 		return this.session;
+	}
+
+	private requireTask(taskId: string): TaskRun {
+		const task = this.tasks.get(taskId);
+		if (!task) {
+			throw new Error(`Unknown task: ${taskId}`);
+		}
+		return task;
+	}
+
+	private async dispatchParallelTasks(
+		groupTitle: string,
+		taskRequests: ParallelTaskRequest[],
+	): Promise<{ groupId: string; tasks: TaskSnapshot[] }> {
+		this.requireConfiguredAuth();
+		if (taskRequests.length === 0) {
+			throw new Error("At least one task is required.");
+		}
+		if (taskRequests.length > MAX_PARALLEL_TASKS) {
+			throw new Error(`Parallel dispatch supports at most ${MAX_PARALLEL_TASKS} tasks.`);
+		}
+		this.requireSession();
+		if (!this.services) {
+			throw new Error("No analytics session services are available.");
+		}
+
+		const groupId = `task-group-${randomUUID()}`;
+		const tasks = taskRequests.map((request) => this.createTaskRun(groupId, groupTitle, request));
+		for (const task of tasks) {
+			this.tasks.set(task.id, task);
+			this.emitTaskUpdate(task);
+			this.emitTaskStatusCard(task, formatTaskQueuedBody(task));
+		}
+		for (const task of tasks) {
+			void this.startTaskAgent(task);
+		}
+		return { groupId, tasks: tasks.map((task) => this.taskSnapshot(task)) };
+	}
+
+	private createTaskRun(groupId: string, groupTitle: string, request: ParallelTaskRequest): TaskRun {
+		const taskId = `task-${randomUUID()}`;
+		return {
+			id: taskId,
+			groupId,
+			groupTitle,
+			sessionId: `task-session-${randomUUID()}`,
+			cardId: `task-card-${taskId}`,
+			title: normalizeTaskTitle(request.title),
+			instruction: request.instruction.trim(),
+			targetPaths: request.targetPaths.map((path) => path.trim()).filter(Boolean),
+			requiresWrites: request.requiresWrites,
+			status: "queued",
+			statusText: "Queued",
+			position: this.nextPosition(),
+			currentTurnRenderedCanvas: false,
+			latestFinalAssistantText: undefined,
+		};
+	}
+
+	private async startTaskAgent(task: TaskRun): Promise<void> {
+		try {
+			const services = this.services;
+			if (!services) {
+				throw new Error("No analytics session services are available.");
+			}
+			const mainSession = this.requireSession();
+			const sessionManager = SessionManager.inMemory(services.cwd);
+			const { session } = await createAgentSessionFromServices({
+				services,
+				sessionManager,
+				model: mainSession.model,
+				thinkingLevel: mainSession.thinkingLevel,
+				tools: TASK_AGENT_TOOLS,
+				customTools: [
+					createRenderCanvasTool({
+						emit: this.emit,
+						nextPosition: () => task.position,
+						editTarget: () => this.taskCardContext(task),
+						onRender: () => {
+							task.currentTurnRenderedCanvas = true;
+						},
+						cardMetadata: taskCardMetadata(task),
+						forceUpdateTarget: true,
+					}),
+				],
+				sessionStartEvent: {
+					type: "session_start",
+					reason: "startup",
+				},
+			});
+			task.session = session;
+			task.sessionId = session.sessionManager.getSessionId();
+			task.status = "working";
+			task.statusText = "Working";
+			task.unsubscribe = session.subscribe((event) => this.handleTaskSessionEvent(task, event));
+			this.emitTaskUpdate(task);
+			this.emitTaskStatusCard(task, formatTaskWorkingBody(task));
+			await session.prompt(formatTaskPrompt(task), { expandPromptTemplates: false });
+		} catch (error) {
+			this.markTaskError(task, errorMessage(error));
+		}
+	}
+
+	private handleTaskSessionEvent(task: TaskRun, event: AgentSessionEvent): void {
+		this.captureTaskFinalAssistantText(task, event);
+		for (const normalized of normalizeSessionEvent(event)) {
+			if (normalized.type === "status") {
+				if (task.status !== "error" && normalized.busy) {
+					task.status = "working";
+					task.statusText = normalized.text;
+					this.emitTaskUpdate(task);
+				}
+				continue;
+			}
+			if (normalized.type === "chat-message") {
+				this.emit({ ...normalized, taskId: task.id });
+				continue;
+			}
+			if (normalized.type === "assistant-stream") {
+				this.emit({ ...normalized, taskId: task.id });
+				continue;
+			}
+			if (normalized.type === "queue-update") {
+				this.emit({ ...normalized, taskId: task.id });
+				continue;
+			}
+			if (normalized.type === "canvas-card") {
+				this.emit({
+					type: "canvas-card",
+					card: {
+						...normalized.card,
+						...taskCardMetadata(task),
+					},
+				});
+			}
+		}
+		if (event.type === "agent_end" && !event.willRetry) {
+			this.renderTaskFallbackCanvasCard(task);
+			if (task.status !== "error") {
+				task.status = "complete";
+				task.statusText = "Complete";
+				this.emitTaskUpdate(task);
+			}
+			task.currentTurnRenderedCanvas = false;
+			task.latestFinalAssistantText = undefined;
+		}
+	}
+
+	private captureTaskFinalAssistantText(task: TaskRun, event: AgentSessionEvent): void {
+		if (event.type !== "message_end" || messageRole(event.message) !== "assistant") {
+			return;
+		}
+		if (messageHasToolCall(event.message)) {
+			return;
+		}
+		const text = messageText(event.message);
+		if (!text) {
+			return;
+		}
+		task.latestFinalAssistantText = {
+			id: messageId(event.message),
+			text,
+		};
+	}
+
+	private renderTaskFallbackCanvasCard(task: TaskRun): void {
+		if (task.currentTurnRenderedCanvas || !task.latestFinalAssistantText) {
+			return;
+		}
+		this.emit({
+			type: "canvas-card",
+			card: createTextCanvasCard({
+				id: task.cardId,
+				title: task.title,
+				subtitle: "Task output",
+				body: task.latestFinalAssistantText.text,
+				position: task.position,
+				sourceMessageIds: [task.latestFinalAssistantText.id],
+				cardMetadata: taskCardMetadata(task),
+			}),
+		});
+	}
+
+	private markTaskError(task: TaskRun, message: string): void {
+		task.status = "error";
+		task.statusText = message || "Task failed";
+		this.emitTaskUpdate(task);
+		this.emitTaskStatusCard(task, task.statusText);
+	}
+
+	private emitTaskUpdate(task: TaskRun): void {
+		this.emit({ type: "task-update", task: this.taskSnapshot(task) });
+	}
+
+	private emitTaskStatusCard(task: TaskRun, body: string): void {
+		const card = createTextCanvasCard({
+			id: task.cardId,
+			title: task.title,
+			subtitle: `${task.groupTitle} - ${task.statusText}`,
+			body,
+			position: task.position,
+			sourceMessageIds: [],
+			cardMetadata: taskCardMetadata(task),
+		});
+		card.type = task.status === "error" ? "error" : task.status === "complete" ? "summary" : "working";
+		card.status = task.status === "queued" ? "working" : task.status;
+		card.statusLabel = task.statusText;
+		card.progress = task.status === "complete" || task.status === "error" ? 100 : undefined;
+		this.emit({ type: "canvas-card", card });
+	}
+
+	private taskSnapshot(task: TaskRun): TaskSnapshot {
+		return {
+			id: task.id,
+			groupId: task.groupId,
+			sessionId: task.sessionId,
+			cardId: task.cardId,
+			title: task.title,
+			status: task.status,
+			statusText: task.statusText,
+			targetPaths: [...task.targetPaths],
+			requiresWrites: task.requiresWrites,
+		};
+	}
+
+	private taskCardContext(task: TaskRun): PromptCardContext {
+		return {
+			id: task.cardId,
+			type: task.status === "error" ? "error" : task.status === "complete" ? "summary" : "working",
+			title: task.title,
+			body: formatTaskWorkingBody(task),
+			position: task.position,
+			kept: false,
+		};
 	}
 
 	private getAuthStorage(): AuthStorage {
@@ -401,6 +716,61 @@ function formatCanvasRenderInstruction(cards: PromptCardContext[]): string {
 		"Canvas render behavior:",
 		"- Multiple canvas items are selected, so render_canvas creates a new result unless the user clearly asks for one specific selected item to be changed.",
 	].join("\n");
+}
+
+function taskCardMetadata(task: TaskRun): Pick<CanvasCard, "taskId" | "taskGroupId" | "taskSessionId"> {
+	return {
+		taskId: task.id,
+		taskGroupId: task.groupId,
+		taskSessionId: task.sessionId,
+	};
+}
+
+function formatTaskPrompt(task: TaskRun): string {
+	return [
+		`Task group: ${task.groupTitle}`,
+		`Task: ${task.title}`,
+		`Instruction:\n${task.instruction}`,
+		formatTaskTargetPaths(task),
+		task.requiresWrites
+			? "This task may edit or create files. Keep file changes scoped to this task's target paths unless the instruction explicitly requires otherwise."
+			: "Prefer read-only work unless the instruction explicitly requires an edit.",
+		"Work independently from the main chat and other task agents. Use normal read, shell, edit, and write tools as needed.",
+		"Update the assigned canvas task card with render_canvas when the task is complete. Keep the output concise and presentation-ready.",
+	]
+		.filter(Boolean)
+		.join("\n\n");
+}
+
+function formatTaskQueuedBody(task: TaskRun): string {
+	return [`Queued task agent.`, `Instruction:\n${task.instruction}`, formatTaskTargetPaths(task)]
+		.filter(Boolean)
+		.join("\n\n");
+}
+
+function formatTaskWorkingBody(task: TaskRun): string {
+	return [`Task agent is working.`, `Instruction:\n${task.instruction}`, formatTaskTargetPaths(task)]
+		.filter(Boolean)
+		.join("\n\n");
+}
+
+function formatTaskTargetPaths(task: TaskRun): string {
+	if (task.targetPaths.length === 0) {
+		return "";
+	}
+	return `Target paths:\n${task.targetPaths.map((path) => `- ${path}`).join("\n")}`;
+}
+
+function normalizeTaskTitle(title: string): string {
+	const trimmed = title.trim().replace(/\s+/g, " ");
+	if (!trimmed) {
+		return "Parallel task";
+	}
+	return trimmed.length > 80 ? `${trimmed.slice(0, 77)}...` : trimmed;
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }
 
 function messageId(message: AgentMessage): string {
