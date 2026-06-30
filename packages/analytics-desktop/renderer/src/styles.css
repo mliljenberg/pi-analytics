@@ -17,6 +17,12 @@
 	--shadow-lg: 0 42px 140px rgba(27, 31, 40, 0.22);
 }
 
+@property --loading-border-angle {
+	syntax: "<angle>";
+	inherits: false;
+	initial-value: 0deg;
+}
+
 * {
 	box-sizing: border-box;
 }
@@ -334,38 +340,29 @@ input:disabled {
 	z-index: 1;
 	border-radius: inherit;
 	padding: 2px;
+	--loading-border-angle: 0deg;
 	background: conic-gradient(
-		from 0deg,
+		from var(--loading-border-angle),
 		rgba(40, 110, 240, 0) 0deg,
-		rgba(40, 110, 240, 0) 42deg,
-		rgba(40, 110, 240, 0.94) 78deg,
-		rgba(22, 168, 137, 0.9) 118deg,
-		rgba(123, 97, 255, 0.92) 158deg,
-		rgba(239, 106, 79, 0.86) 192deg,
-		rgba(239, 106, 79, 0) 236deg,
+		rgba(40, 110, 240, 0) 58deg,
+		rgba(40, 110, 240, 0.96) 82deg,
+		rgba(22, 168, 137, 0.96) 106deg,
+		rgba(123, 97, 255, 0.96) 132deg,
+		rgba(239, 106, 79, 0.92) 154deg,
+		rgba(239, 106, 79, 0) 184deg,
 		rgba(40, 110, 240, 0) 360deg
 	);
 	pointer-events: none;
 	animation: loading-border-orbit 2.8s linear infinite;
+	filter: drop-shadow(0 0 8px rgba(40, 110, 240, 0.36));
 	-webkit-mask:
 		linear-gradient(#000 0 0) content-box,
 		linear-gradient(#000 0 0);
 	-webkit-mask-composite: xor;
+	mask:
+		linear-gradient(#000 0 0) content-box,
+		linear-gradient(#000 0 0);
 	mask-composite: exclude;
-}
-
-.chat-dock.loading::after,
-.canvas-card.loading::after {
-	content: "";
-	position: absolute;
-	inset: 0;
-	z-index: 1;
-	border-radius: inherit;
-	background:
-		radial-gradient(circle at 80% 20%, rgba(40, 110, 240, 0.14), transparent 34%),
-		radial-gradient(circle at 18% 88%, rgba(22, 168, 137, 0.1), transparent 30%);
-	pointer-events: none;
-	opacity: 0.72;
 }
 
 .chat-dock > *,
@@ -1328,7 +1325,7 @@ input:disabled {
 
 @keyframes loading-border-orbit {
 	to {
-		transform: rotate(1turn);
+		--loading-border-angle: 1turn;
 	}
 }
 
