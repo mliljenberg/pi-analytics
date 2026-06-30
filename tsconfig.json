@@ -21,6 +21,9 @@
 			"@earendil-works/pi-coding-agent/core/auth-storage": [
 				"./packages/coding-agent/src/core/auth-storage.ts"
 			],
+			"@earendil-works/pi-coding-agent/core/extensions": [
+				"./packages/coding-agent/src/core/extensions/index.ts"
+			],
 			"@earendil-works/pi-coding-agent/core/model-registry": [
 				"./packages/coding-agent/src/core/model-registry.ts"
 			],

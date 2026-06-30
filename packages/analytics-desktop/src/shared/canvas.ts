@@ -1,4 +1,4 @@
-export type CanvasCardType = "summary" | "chart" | "diagram" | "table" | "report" | "tool" | "working" | "error";
+export type CanvasCardType = "summary" | "chart" | "diagram" | "table" | "report" | "html" | "working" | "error";
 
 export type CanvasCardStatus = "working" | "complete" | "kept" | "error";
 
@@ -35,6 +35,7 @@ export interface CanvasCard {
 	rows?: string[][];
 	nodes?: string[];
 	sections?: ReportSection[];
+	html?: string;
 	sourceMessageIds: string[];
 	toolCallId?: string;
 }

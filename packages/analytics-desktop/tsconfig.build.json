@@ -15,6 +15,7 @@
 				"../coding-agent/src/core/agent-session-services.ts"
 			],
 			"@earendil-works/pi-coding-agent/core/auth-storage": ["../coding-agent/src/core/auth-storage.ts"],
+			"@earendil-works/pi-coding-agent/core/extensions": ["../coding-agent/src/core/extensions/index.ts"],
 			"@earendil-works/pi-coding-agent/core/model-registry": ["../coding-agent/src/core/model-registry.ts"],
 			"@earendil-works/pi-coding-agent/core/provider-display-names": [
 				"../coding-agent/src/core/provider-display-names.ts"

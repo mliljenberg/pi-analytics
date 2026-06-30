@@ -1,0 +1,199 @@
+.html-card .card-body {
+	padding: 0;
+}
+
+.html-artifact {
+	display: block;
+	width: 100%;
+	min-height: 100%;
+	overflow: hidden;
+	color: var(--ink);
+	background: var(--paper);
+}
+
+.html-artifact,
+.html-artifact * {
+	box-sizing: border-box;
+}
+
+.html-artifact svg {
+	display: block;
+	max-width: 100%;
+	height: auto;
+}
+
+.artifact {
+	display: grid;
+	gap: 14px;
+	padding: 16px;
+	font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+	color: var(--ink);
+	background: var(--paper);
+}
+
+.artifact-header {
+	display: grid;
+	gap: 5px;
+	padding-bottom: 12px;
+	border-bottom: 1px solid var(--soft-line);
+}
+
+.artifact-title {
+	margin: 0;
+	font-size: 18px;
+	line-height: 1.22;
+	font-weight: 720;
+	letter-spacing: 0;
+}
+
+.artifact-subtitle {
+	margin: 0;
+	color: var(--muted);
+	font-size: 12px;
+	line-height: 1.4;
+}
+
+.artifact-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+	gap: 10px;
+}
+
+.artifact-panel {
+	border: 1px solid var(--soft-line);
+	border-radius: 8px;
+	background: rgba(246, 247, 250, 0.72);
+	padding: 12px;
+}
+
+.artifact-label {
+	display: block;
+	margin-bottom: 5px;
+	color: var(--muted);
+	font-size: 11px;
+	font-weight: 650;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.artifact-value {
+	margin: 0;
+	font-size: 24px;
+	line-height: 1.1;
+	font-weight: 740;
+	letter-spacing: 0;
+}
+
+.artifact-text {
+	margin: 0;
+	color: #2f3540;
+	font-size: 13px;
+	line-height: 1.45;
+}
+
+.artifact-list {
+	display: grid;
+	gap: 8px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.artifact-list li {
+	display: grid;
+	grid-template-columns: 7px minmax(0, 1fr);
+	gap: 8px;
+	align-items: baseline;
+	color: #2f3540;
+	font-size: 13px;
+	line-height: 1.4;
+}
+
+.artifact-list li::before {
+	content: "";
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--blue);
+}
+
+.artifact-list li:nth-child(2)::before {
+	background: var(--mint);
+}
+
+.artifact-list li:nth-child(3)::before {
+	background: var(--coral);
+}
+
+.artifact-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 12px;
+}
+
+.artifact-table th,
+.artifact-table td {
+	border-bottom: 1px solid var(--soft-line);
+	padding: 9px 6px;
+	text-align: left;
+	vertical-align: top;
+}
+
+.artifact-table th {
+	color: var(--muted);
+	font-weight: 650;
+}
+
+.artifact-bar {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 10px;
+	align-items: center;
+	color: var(--muted);
+	font-size: 12px;
+}
+
+.artifact-track {
+	height: 18px;
+	border-radius: 999px;
+	background: rgba(16, 17, 20, 0.07);
+	overflow: hidden;
+}
+
+.artifact-fill {
+	display: block;
+	height: 100%;
+	width: var(--artifact-progress, 50%);
+	border-radius: 999px;
+	background: linear-gradient(90deg, var(--blue), var(--mint));
+}
+
+.artifact-status {
+	display: inline-flex;
+	align-items: center;
+	min-height: 22px;
+	width: fit-content;
+	padding: 0 8px;
+	border-radius: 999px;
+	color: #0c735d;
+	background: rgba(22, 168, 137, 0.12);
+	font-size: 11px;
+	font-weight: 650;
+}
+
+.artifact-status.warning {
+	color: #8a5b09;
+	background: rgba(216, 152, 38, 0.14);
+}
+
+.artifact-status.error {
+	color: #9b2b1c;
+	background: rgba(239, 106, 79, 0.13);
+}
+
+.artifact-caption {
+	padding: 10px 14px 14px;
+	color: var(--muted);
+	font-size: 12px;
+	line-height: 1.4;
+}

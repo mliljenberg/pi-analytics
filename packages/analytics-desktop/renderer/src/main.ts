@@ -8,6 +8,7 @@ import type {
 	SessionSnapshot,
 } from "../../src/shared/ipc.ts";
 import "./styles.css";
+import "./canvas-artifacts.css";
 
 interface ChatMessage {
 	id: string;
@@ -39,6 +40,16 @@ interface AppState {
 	shareReady: boolean;
 	htmlCanvasActive: boolean;
 	htmlCanvasFailed: boolean;
+}
+
+interface CardDragState {
+	id: string;
+	pointerId: number;
+	startClientX: number;
+	startClientY: number;
+	startX: number;
+	startY: number;
+	moved: boolean;
 }
 
 const state: AppState = {
@@ -106,6 +117,8 @@ const toast = requireElement<HTMLDivElement>("toast");
 let saveTimer: number | undefined;
 let canvasFrame: number | undefined;
 let toastTimer: number | undefined;
+let cardDrag: CardDragState | undefined;
+let suppressNextCardClick = false;
 
 function requireElement<T extends HTMLElement>(id: string): T {
 	const element = document.getElementById(id);
@@ -187,9 +200,6 @@ function renderStatus(): void {
 	reportButton.disabled = locked || !state.cwd || state.busy;
 	chatInput.disabled = locked || !state.cwd || state.busy;
 	modelSelect.disabled = locked || !state.cwd || state.busy || state.models.length === 0;
-	for (const button of document.querySelectorAll<HTMLButtonElement>("[data-prompt]")) {
-		button.disabled = locked || !state.cwd || state.busy;
-	}
 	for (const button of [
 		askSelectedButton,
 		keepSelectedButton,
@@ -268,6 +278,7 @@ function createCardElement(card: CanvasCard, clone: boolean): HTMLElement {
 	}
 	article.className = [
 		"canvas-card",
+		card.type === "html" ? "html-card" : "",
 		state.selectedIds.has(card.id) ? "selected" : "",
 		card.kept ? "kept" : "",
 		card.status === "error" ? "error" : "",
@@ -293,7 +304,7 @@ function createCardElement(card: CanvasCard, clone: boolean): HTMLElement {
 	status.textContent = card.kept ? "Kept" : card.statusLabel;
 	actions.appendChild(status);
 	actions.appendChild(actionButton("Open", "open", clone));
-	if (card.type === "report" || card.kept) {
+	if (card.type === "report" || card.type === "html" || card.kept) {
 		actions.appendChild(actionButton("Export", "export", clone));
 	}
 	head.append(title, actions);
@@ -345,10 +356,17 @@ function appendCardBody(body: HTMLElement, card: CanvasCard): void {
 		return;
 	}
 
-	if (card.type === "tool") {
-		const pre = document.createElement("pre");
-		pre.textContent = card.body;
-		body.appendChild(pre);
+	if (card.type === "html" && card.html) {
+		const artifact = document.createElement("div");
+		artifact.className = "html-artifact";
+		artifact.innerHTML = sanitizeCanvasHtml(card.html);
+		body.appendChild(artifact);
+		if (card.body) {
+			const caption = document.createElement("p");
+			caption.className = "artifact-caption";
+			caption.textContent = card.body;
+			body.appendChild(caption);
+		}
 		return;
 	}
 
@@ -413,6 +431,48 @@ function appendCardBody(body: HTMLElement, card: CanvasCard): void {
 		}
 		body.appendChild(list);
 	}
+}
+
+function sanitizeCanvasHtml(value: string): string {
+	const template = document.createElement("template");
+	template.innerHTML = value;
+	for (const element of Array.from(template.content.querySelectorAll("*"))) {
+		if (isForbiddenCanvasElement(element)) {
+			element.remove();
+			continue;
+		}
+		for (const attribute of Array.from(element.attributes)) {
+			const name = attribute.name.toLowerCase();
+			const text = attribute.value.trim().toLowerCase();
+			if (name.startsWith("on") || name === "srcdoc") {
+				element.removeAttribute(attribute.name);
+				continue;
+			}
+			if ((name === "href" || name === "src" || name === "xlink:href" || name === "action") && text.startsWith("javascript:")) {
+				element.removeAttribute(attribute.name);
+				continue;
+			}
+			if (name === "style") {
+				element.setAttribute(attribute.name, sanitizeCss(attribute.value));
+			}
+		}
+		if (element.tagName.toLowerCase() === "style") {
+			element.textContent = sanitizeCss(element.textContent ?? "");
+		}
+	}
+	return template.innerHTML;
+}
+
+function isForbiddenCanvasElement(element: Element): boolean {
+	return ["script", "iframe", "object", "embed", "link", "meta", "base"].includes(element.tagName.toLowerCase());
+}
+
+function sanitizeCss(value: string): string {
+	return value
+		.replace(/@import[^;]+;?/gi, "")
+		.replace(/url\s*\([^)]*\)/gi, "")
+		.replace(/expression\s*\([^)]*\)/gi, "")
+		.replace(/javascript:/gi, "");
 }
 
 function createTable(rows: string[][]): HTMLTableElement {
@@ -651,12 +711,8 @@ function handleRendererEvent(event: MainToRendererEvent): void {
 		renderChat();
 		return;
 	}
-	if (event.type === "analysis-card" || event.type === "tool-card-start") {
+	if (event.type === "canvas-card") {
 		upsertCard(event.card);
-		return;
-	}
-	if (event.type === "tool-card-end") {
-		completeToolCard(event.toolCallId, event.body, event.isError);
 		return;
 	}
 	if (event.type === "model-selected") {
@@ -707,18 +763,6 @@ function upsertCard(card: CanvasCard): void {
 	scheduleSaveBoard();
 }
 
-function completeToolCard(toolCallId: string, body: string, isError: boolean): void {
-	const card = state.cards.find((candidate) => candidate.toolCallId === toolCallId);
-	if (!card) return;
-	card.body = body;
-	card.status = isError ? "error" : "complete";
-	card.statusLabel = isError ? "Error" : "Complete";
-	card.progress = 100;
-	card.subtitle = isError ? "Tool failed" : "Tool result";
-	render();
-	scheduleSaveBoard();
-}
-
 function selectedCards(): CanvasCard[] {
 	return state.cards.filter((card) => state.selectedIds.has(card.id));
 }
@@ -740,6 +784,78 @@ function toggleSelection(id: string, additive: boolean): void {
 		state.selectedIds.add(id);
 	}
 	render();
+}
+
+function beginCardDrag(event: PointerEvent): void {
+	if (!state.authenticated || event.button !== 0 || window.innerWidth <= 860) return;
+	const target = event.target;
+	if (!(target instanceof Element)) return;
+	if (target.closest("[data-action]")) return;
+	const cardElement = target.closest<HTMLElement>(".canvas-card");
+	if (!cardElement?.dataset.id) return;
+	const card = state.cards.find((candidate) => candidate.id === cardElement.dataset.id);
+	if (!card) return;
+	cardDrag = {
+		id: card.id,
+		pointerId: event.pointerId,
+		startClientX: event.clientX,
+		startClientY: event.clientY,
+		startX: card.position.x,
+		startY: card.position.y,
+		moved: false,
+	};
+	cardElement.setPointerCapture(event.pointerId);
+	cardElement.classList.add("dragging");
+}
+
+function moveCardDrag(event: PointerEvent): void {
+	if (!cardDrag || event.pointerId !== cardDrag.pointerId) return;
+	const card = state.cards.find((candidate) => candidate.id === cardDrag?.id);
+	if (!card) return;
+	const deltaX = event.clientX - cardDrag.startClientX;
+	const deltaY = event.clientY - cardDrag.startClientY;
+	cardDrag.moved ||= Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4;
+	if (!cardDrag.moved) return;
+	card.position = clampCardPosition(card.position.w, card.position.h, cardDrag.startX + deltaX, cardDrag.startY + deltaY);
+	updateCardPositionElements(card.id, card.position);
+	scheduleCanvasPaint();
+}
+
+function endCardDrag(event: PointerEvent): void {
+	if (!cardDrag || event.pointerId !== cardDrag.pointerId) return;
+	const moved = cardDrag.moved;
+	const id = cardDrag.id;
+	cardDrag = undefined;
+	for (const element of cardElements(id)) {
+		element.classList.remove("dragging");
+	}
+	if (!moved) return;
+	suppressNextCardClick = true;
+	scheduleSaveBoard();
+	window.setTimeout(() => {
+		suppressNextCardClick = false;
+	}, 0);
+}
+
+function clampCardPosition(width: number, height: number, x: number, y: number): CanvasCardPosition {
+	const maxX = Math.max(0, canvasShell.clientWidth - width);
+	const maxY = Math.max(0, canvasShell.clientHeight - height);
+	return {
+		x: Math.min(maxX, Math.max(0, Math.round(x))),
+		y: Math.min(maxY, Math.max(0, Math.round(y))),
+		w: width,
+		h: height,
+	};
+}
+
+function updateCardPositionElements(id: string, position: CanvasCardPosition): void {
+	for (const element of cardElements(id)) {
+		setCardPosition(element, position);
+	}
+}
+
+function cardElements(id: string): HTMLElement[] {
+	return Array.from(document.querySelectorAll<HTMLElement>(".canvas-card")).filter((element) => element.dataset.id === id);
 }
 
 function keepSelected(): void {
@@ -841,6 +957,11 @@ function errorMessage(error: unknown): string {
 }
 
 cardHost.addEventListener("click", (event) => {
+	if (suppressNextCardClick) {
+		suppressNextCardClick = false;
+		event.preventDefault();
+		return;
+	}
 	const target = event.target;
 	if (!(target instanceof Element)) return;
 	const action = target.closest<HTMLElement>("[data-action]");
@@ -857,17 +978,14 @@ cardHost.addEventListener("click", (event) => {
 	}
 	toggleSelection(cardElement.dataset.id, event.shiftKey || event.metaKey || event.ctrlKey);
 });
+cardHost.addEventListener("pointerdown", beginCardDrag);
+cardHost.addEventListener("pointermove", moveCardDrag);
+cardHost.addEventListener("pointerup", endCardDrag);
+cardHost.addEventListener("pointercancel", endCardDrag);
 
 composer.addEventListener("submit", (event) => {
 	event.preventDefault();
 	void submitPrompt(chatInput.value);
-});
-
-document.querySelectorAll<HTMLButtonElement>("[data-prompt]").forEach((button) => {
-	button.addEventListener("click", () => {
-		const prompt = button.dataset.prompt;
-		if (prompt) void submitPrompt(prompt);
-	});
 });
 
 openFolderButton.addEventListener("click", () => {

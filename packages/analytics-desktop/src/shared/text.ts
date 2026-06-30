@@ -11,10 +11,6 @@ export function textFromContent(content: unknown): string {
 		if (!isRecord(item)) continue;
 		if (item.type === "text" && typeof item.text === "string") {
 			parts.push(item.text);
-			continue;
-		}
-		if (item.type === "toolCall" && typeof item.name === "string") {
-			parts.push(`[tool: ${item.name}]`);
 		}
 	}
 

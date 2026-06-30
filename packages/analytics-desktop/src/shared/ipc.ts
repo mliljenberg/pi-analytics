@@ -92,9 +92,7 @@ export type MainToRendererEvent =
 	| { type: "login-status"; message: string }
 	| { type: "diagnostic"; diagnostic: AppDiagnostic }
 	| { type: "assistant-stream"; id: string; text: string }
-	| { type: "analysis-card"; card: CanvasCard }
-	| { type: "tool-card-start"; card: CanvasCard }
-	| { type: "tool-card-end"; toolCallId: string; body: string; isError: boolean }
+	| { type: "canvas-card"; card: CanvasCard }
 	| { type: "model-selected"; model: ModelSummary }
 	| { type: "exported-report"; filePath: string }
 	| ChatMessageEvent;

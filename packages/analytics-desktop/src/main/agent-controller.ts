@@ -1,3 +1,4 @@
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { getProviders } from "@earendil-works/pi-ai/compat";
 import type { OAuthProviderId } from "@earendil-works/pi-ai/oauth";
@@ -14,7 +15,9 @@ import { SessionManager } from "@earendil-works/pi-coding-agent/core/session-man
 import type { CanvasCardPosition, PromptCardContext } from "../shared/canvas.ts";
 import { normalizeSessionEvent } from "../shared/card-events.ts";
 import type { AppDiagnostic, AuthState, MainToRendererEvent, ModelSummary, SessionSnapshot } from "../shared/ipc.ts";
+import { isRecord, textFromContent } from "../shared/text.ts";
 import type { BoardStore } from "./board-store.ts";
+import { createRenderCanvasTool, createTextCanvasCard } from "./canvas-tool.ts";
 
 type EmitEvent = (event: MainToRendererEvent) => void;
 type OpenExternal = (url: string) => Promise<void>;
@@ -43,6 +46,13 @@ export class AgentController {
 	private session: AgentSession | undefined;
 	private unsubscribe: (() => void) | undefined;
 	private nextPositionIndex = 0;
+	private currentTurnRenderedCanvas = false;
+	private latestFinalAssistantText:
+		| {
+				id: string;
+				text: string;
+		  }
+		| undefined;
 
 	constructor(boardStore: BoardStore, emit: EmitEvent) {
 		this.boardStore = boardStore;
@@ -124,7 +134,16 @@ export class AgentController {
 		const { session, modelFallbackMessage } = await createAgentSessionFromServices({
 			services: this.services,
 			sessionManager,
-			tools: ["read", "grep", "find", "ls"],
+			tools: ["read", "grep", "find", "ls", "render_canvas"],
+			customTools: [
+				createRenderCanvasTool({
+					emit: this.emit,
+					nextPosition: () => this.nextPosition(),
+					onRender: () => {
+						this.currentTurnRenderedCanvas = true;
+					},
+				}),
+			],
 			sessionStartEvent: {
 				type: "session_start",
 				reason: "startup",
@@ -152,6 +171,8 @@ export class AgentController {
 	async prompt(text: string, selectedCards: PromptCardContext[]): Promise<void> {
 		this.requireConfiguredAuth();
 		const session = this.requireSession();
+		this.currentTurnRenderedCanvas = false;
+		this.latestFinalAssistantText = undefined;
 		const promptText =
 			selectedCards.length > 0 ? `${text}\n\nSelected canvas context:\n${formatSelectedCards(selectedCards)}` : text;
 		await session.prompt(promptText);
@@ -257,9 +278,53 @@ export class AgentController {
 	}
 
 	private handleSessionEvent(event: AgentSessionEvent): void {
-		for (const normalized of normalizeSessionEvent(event, () => this.nextPosition())) {
+		this.captureFinalAssistantText(event);
+		for (const normalized of normalizeSessionEvent(event)) {
 			this.emit(normalized);
 		}
+		if (event.type === "agent_end" && !event.willRetry) {
+			this.renderFallbackCanvasCard();
+			this.currentTurnRenderedCanvas = false;
+			this.latestFinalAssistantText = undefined;
+		}
+	}
+
+	private captureFinalAssistantText(event: AgentSessionEvent): void {
+		if (event.type !== "message_end" || messageRole(event.message) !== "assistant") {
+			return;
+		}
+		if (messageHasToolCall(event.message)) {
+			return;
+		}
+		const text = messageText(event.message);
+		if (!text) {
+			return;
+		}
+		this.latestFinalAssistantText = {
+			id: messageId(event.message),
+			text,
+		};
+	}
+
+	private renderFallbackCanvasCard(): void {
+		if (this.currentTurnRenderedCanvas || !this.latestFinalAssistantText) {
+			return;
+		}
+		if (isClarifyingQuestion(this.latestFinalAssistantText.text)) {
+			return;
+		}
+		this.currentTurnRenderedCanvas = true;
+		this.emit({
+			type: "canvas-card",
+			card: createTextCanvasCard({
+				id: `canvas-${this.latestFinalAssistantText.id}`,
+				title: "Answer",
+				subtitle: "Agent output",
+				body: this.latestFinalAssistantText.text,
+				position: this.nextPosition(),
+				sourceMessageIds: [this.latestFinalAssistantText.id],
+			}),
+		});
 	}
 
 	private nextPosition(): CanvasCardPosition {
@@ -302,4 +367,43 @@ function isApiKeyLoginProvider(providerId: string, oauthProviderIds: ReadonlySet
 
 function formatSelectedCards(cards: PromptCardContext[]): string {
 	return cards.map((card) => `- ${card.title} (${card.type}): ${card.body}`).join("\n");
+}
+
+function messageId(message: AgentMessage): string {
+	if ("responseId" in message && typeof message.responseId === "string") return message.responseId;
+	if ("timestamp" in message && typeof message.timestamp === "number")
+		return `${messageRole(message)}-${message.timestamp}`;
+	return `message-${messageRole(message)}`;
+}
+
+function messageRole(message: AgentMessage): string {
+	return "role" in message && typeof message.role === "string" ? message.role : "unknown";
+}
+
+function messageText(message: AgentMessage): string {
+	return "content" in message ? textFromContent(message.content) : "";
+}
+
+function messageHasToolCall(message: AgentMessage): boolean {
+	if (!("content" in message) || !Array.isArray(message.content)) {
+		return false;
+	}
+	return message.content.some((item) => isRecord(item) && item.type === "toolCall");
+}
+
+function isClarifyingQuestion(text: string): boolean {
+	const trimmed = text.trim();
+	if (!trimmed.includes("?")) {
+		return false;
+	}
+	const words = trimmed.split(/\s+/);
+	if (words.length > 160) {
+		return false;
+	}
+	const sentences = trimmed
+		.split(/(?<=[.!?])\s+/)
+		.map((sentence) => sentence.trim())
+		.filter(Boolean);
+	const questionCount = sentences.filter((sentence) => sentence.endsWith("?")).length;
+	return questionCount > 0 && questionCount >= Math.ceil(sentences.length / 2);
 }

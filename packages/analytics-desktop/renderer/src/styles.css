@@ -115,7 +115,6 @@ button {
 .ghost-button,
 .dark-button,
 .soft-button,
-.chip,
 .icon-button,
 .model-select {
 	min-height: 34px;
@@ -133,7 +132,6 @@ button {
 
 .ghost-button,
 .soft-button,
-.chip,
 .icon-button,
 .model-select {
 	border: 1px solid var(--line);
@@ -154,15 +152,6 @@ button {
 	font-weight: 650;
 	font-size: 13px;
 	box-shadow: 0 10px 24px rgba(16, 17, 20, 0.18);
-}
-
-.chip {
-	min-height: 32px;
-	padding: 0 12px;
-	border-radius: 999px;
-	color: #3f4652;
-	font-size: 13px;
-	background: rgba(255, 255, 255, 0.62);
 }
 
 .icon-button {
@@ -187,7 +176,6 @@ input:disabled {
 
 .ghost-button:not(:disabled):hover,
 .soft-button:not(:disabled):hover,
-.chip:not(:disabled):hover,
 .icon-button:not(:disabled):hover,
 .model-select:not(:disabled):hover {
 	border-color: rgba(16, 17, 20, 0.18);
@@ -384,13 +372,6 @@ input:disabled {
 	box-shadow: 0 0 0 4px rgba(40, 110, 240, 0.1);
 }
 
-.suggestions {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-	padding: 0 12px 12px;
-}
-
 .canvas-card {
 	position: absolute;
 	width: var(--w);
@@ -402,6 +383,7 @@ input:disabled {
 	background: rgba(255, 255, 255, 0.94);
 	box-shadow: var(--shadow-sm);
 	overflow: hidden;
+	cursor: grab;
 	transition:
 		box-shadow 0.16s ease,
 		transform 0.16s ease,
@@ -411,6 +393,19 @@ input:disabled {
 .canvas-card:hover {
 	transform: translateY(-2px);
 	box-shadow: var(--shadow-md);
+}
+
+.canvas-card.dragging {
+	cursor: grabbing;
+	transition: none;
+	transform: none;
+	box-shadow:
+		0 0 0 4px rgba(40, 110, 240, 0.12),
+		var(--shadow-md);
+}
+
+.html-canvas-active .card-host .canvas-card.dragging {
+	opacity: 0.22;
 }
 
 .canvas-card.selected {
@@ -932,11 +927,6 @@ input:disabled {
 
 	.composer {
 		grid-template-columns: 1fr;
-	}
-
-	.suggestions {
-		max-height: 76px;
-		overflow: auto;
 	}
 
 	.empty-hint {
