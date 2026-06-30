@@ -134,7 +134,7 @@ export class AgentController {
 		const { session, modelFallbackMessage } = await createAgentSessionFromServices({
 			services: this.services,
 			sessionManager,
-			tools: ["read", "grep", "find", "ls", "render_canvas"],
+			tools: ["read", "bash", "grep", "find", "ls", "render_canvas"],
 			customTools: [
 				createRenderCanvasTool({
 					emit: this.emit,
