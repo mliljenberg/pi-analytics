@@ -9,7 +9,7 @@ import type {
 	SessionSnapshot,
 	TaskSnapshot,
 } from "../../src/shared/ipc.ts";
-import createLucideIcon, { Download, Maximize2, Minimize2, PanelBottom, PanelRight, Square, X } from "lucide";
+import { createElement as createLucideIcon, Download, Maximize2, Minimize2, PanelBottom, PanelRight, Square, X } from "lucide";
 import "./styles.css";
 import "./canvas-artifacts.css";
 
