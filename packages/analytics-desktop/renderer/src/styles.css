@@ -385,19 +385,62 @@ input:disabled {
 	grid-template-rows: minmax(0, 1fr) auto auto auto;
 }
 
-.dock-toggle {
+.dock-controls {
 	position: absolute;
 	right: 10px;
 	top: 8px;
-	z-index: 2;
+	z-index: 4;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.dock-control {
+	width: 28px;
 	min-height: 26px;
 	border: 1px solid var(--line);
 	border-radius: 8px;
 	background: rgba(255, 255, 255, 0.78);
 	color: #4c5564;
-	padding: 0 8px;
-	font-size: 11px;
+	padding: 0;
+	font-size: 17px;
 	font-weight: 650;
+	line-height: 1;
+	display: inline-grid;
+	place-items: center;
+}
+
+.dock-control:hover {
+	border-color: rgba(16, 17, 20, 0.18);
+	background: #fff;
+}
+
+.chat-dock.minimized {
+	width: auto;
+	min-width: 82px;
+	min-height: 44px;
+}
+
+.chat-dock.right.minimized {
+	top: auto;
+	display: block;
+	width: auto;
+	min-width: 82px;
+}
+
+.chat-dock.minimized .dock-controls {
+	position: static;
+	padding: 8px;
+	justify-content: center;
+}
+
+.chat-dock.minimized .chat-tabs,
+.chat-dock.minimized .chat-log,
+.chat-dock.minimized .agent-loading,
+.chat-dock.minimized .queue-stack,
+.chat-dock.minimized .selected-note,
+.chat-dock.minimized .composer {
+	display: none;
 }
 
 .chat-tabs {

@@ -60,6 +60,7 @@ interface AppState {
 	htmlCanvasFailed: boolean;
 	viewport: CanvasViewport;
 	chatDockPosition: ChatDockPosition;
+	chatDockMinimized: boolean;
 }
 
 interface CardDragState {
@@ -123,6 +124,7 @@ const state: AppState = {
 		zoom: 1,
 	},
 	chatDockPosition: readChatDockPosition(),
+	chatDockMinimized: readChatDockMinimized(),
 };
 
 const api = window.piAnalytics;
@@ -152,6 +154,7 @@ const selectedCount = requireElement<HTMLSpanElement>("selectedCount");
 const selectedNote = requireElement<HTMLDivElement>("selectedNote");
 const chatDock = requireElement<HTMLElement>("chatDock");
 const dockToggleButton = requireElement<HTMLButtonElement>("dockToggleButton");
+const dockMinimizeButton = requireElement<HTMLButtonElement>("dockMinimizeButton");
 const chatTabs = requireElement<HTMLDivElement>("chatTabs");
 const chatLog = requireElement<HTMLDivElement>("chatLog");
 const agentLoading = requireElement<HTMLDivElement>("agentLoading");
@@ -196,9 +199,19 @@ function readChatDockPosition(): ChatDockPosition {
 	return stored === "right" || stored === "bottom" ? stored : "bottom";
 }
 
+function readChatDockMinimized(): boolean {
+	return localStorage.getItem("pi-analytics-chat-minimized") === "true";
+}
+
 function setChatDockPosition(position: ChatDockPosition): void {
 	state.chatDockPosition = position;
 	localStorage.setItem("pi-analytics-chat-dock", position);
+	renderChatDock();
+}
+
+function setChatDockMinimized(minimized: boolean): void {
+	state.chatDockMinimized = minimized;
+	localStorage.setItem("pi-analytics-chat-minimized", minimized ? "true" : "false");
 	renderChatDock();
 }
 
@@ -301,7 +314,14 @@ function renderStatus(): void {
 
 function renderChatDock(): void {
 	chatDock.classList.toggle("right", state.chatDockPosition === "right");
-	dockToggleButton.textContent = state.chatDockPosition === "right" ? "Bottom" : "Right";
+	chatDock.classList.toggle("minimized", state.chatDockMinimized);
+	const nextPosition = state.chatDockPosition === "right" ? "bottom" : "right";
+	dockToggleButton.textContent = nextPosition === "right" ? "▐" : "▁";
+	dockToggleButton.ariaLabel = `Dock ${nextPosition}`;
+	dockToggleButton.title = `Dock ${nextPosition}`;
+	dockMinimizeButton.textContent = state.chatDockMinimized ? "▣" : "−";
+	dockMinimizeButton.ariaLabel = state.chatDockMinimized ? "Expand chat" : "Minimize chat";
+	dockMinimizeButton.title = state.chatDockMinimized ? "Expand chat" : "Minimize chat";
 }
 
 function renderChatTabs(): void {
@@ -1750,6 +1770,10 @@ queueNextButton.addEventListener("click", () => {
 
 dockToggleButton.addEventListener("click", () => {
 	setChatDockPosition(state.chatDockPosition === "right" ? "bottom" : "right");
+});
+
+dockMinimizeButton.addEventListener("click", () => {
+	setChatDockMinimized(!state.chatDockMinimized);
 });
 
 chatTabs.addEventListener("click", (event) => {

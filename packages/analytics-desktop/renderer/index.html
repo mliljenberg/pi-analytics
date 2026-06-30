@@ -42,7 +42,10 @@
 				</div>
 
 				<section class="chat-dock" id="chatDock" aria-label="Chat with Pi">
-					<button class="dock-toggle" id="dockToggleButton" type="button">Dock right</button>
+					<div class="dock-controls">
+						<button class="dock-control" id="dockToggleButton" type="button" aria-label="Dock right" title="Dock right">▐</button>
+						<button class="dock-control" id="dockMinimizeButton" type="button" aria-label="Minimize chat" title="Minimize chat">−</button>
+					</div>
 					<div class="chat-tabs" id="chatTabs" aria-label="Chat tabs"></div>
 					<div class="chat-log" id="chatLog"></div>
 					<div class="agent-loading" id="agentLoading">
