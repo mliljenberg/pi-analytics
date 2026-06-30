@@ -1,70 +1,47 @@
-import type { CanvasCard, CanvasCardPosition, PersistedBoard, PromptCardContext } from "../../src/shared/canvas.ts";
+import type { CanvasCard, CanvasCardPosition, PersistedBoard } from "../../src/shared/canvas.ts";
 import type {
 	AuthState,
 	ChatMessageEvent,
 	MainToRendererEvent,
 	ModelSummary,
-	ProviderSummary,
-	RecentWorkspace,
 	SessionSnapshot,
 	TaskSnapshot,
 } from "../../src/shared/ipc.ts";
-import { createElement as createLucideIcon, Download, Maximize2, Minimize2, PanelBottom, PanelRight, Square, X } from "lucide";
+import { createElement as createLucideIcon, Minimize2, PanelBottom, PanelRight, Square } from "lucide";
+import { paintCanvas as paintCanvasFrame } from "./canvas/paint.ts";
+import { resolveNewCardPosition } from "./canvas/placement.ts";
+import {
+	DEFAULT_CANVAS_VIEWPORT,
+	panCanvasViewport,
+	zoomCanvasViewport,
+} from "./canvas/viewport.ts";
+import { createCardElement, setCardPosition } from "./cards/render-card.ts";
+import {
+	renderChatLog,
+	renderChatTabs as renderChatTabsView,
+	renderQueueStack,
+} from "./chat/render-chat.ts";
+import { compactPath, errorMessage, modelValue, workspaceLabel } from "./labels.ts";
+import {
+	readChatDockMinimized,
+	readChatDockPosition,
+	writeChatDockMinimized,
+	writeChatDockPosition,
+} from "./preferences.ts";
+import {
+	cardContext,
+	deleteCardById,
+	deleteSelectedCards,
+	keepSelectedCards,
+	selectedCards,
+	toggleCardSelection,
+} from "./selection.ts";
+import { createInitialState, type AppState } from "./state.ts";
+import { activeTaskView, applyTaskSnapshot, isTaskBusy, visibleTaskViews } from "./tasks.ts";
 import "./styles.css";
 import "./canvas-artifacts.css";
 
-interface ChatMessage {
-	id: string;
-	author: "You" | "Pi" | "System";
-	text: string;
-	timestamp: string;
-}
-
-interface StreamingMessage {
-	id: string;
-	text: string;
-}
-
-type LucideIconNode = typeof X;
-
-interface TaskView extends TaskSnapshot {
-	messages: ChatMessage[];
-	streaming?: StreamingMessage;
-	queuedSteering: string[];
-	queuedFollowUp: string[];
-}
-
-type ChatDockPosition = "bottom" | "right";
-
-interface AppState {
-	authenticated: boolean;
-	authProviders: ProviderSummary[];
-	pendingModelValue?: string;
-	cwd?: string;
-	sessionId?: string;
-	model?: ModelSummary;
-	models: ModelSummary[];
-	recentWorkspaces: RecentWorkspace[];
-	cards: CanvasCard[];
-	messages: ChatMessage[];
-	streaming?: StreamingMessage;
-	queuedSteering: string[];
-	queuedFollowUp: string[];
-	tasks: Map<string, TaskView>;
-	taskOrder: string[];
-	activeTaskId?: string;
-	selectedIds: Set<string>;
-	loadingCardIds: Set<string>;
-	activeModalId?: string;
-	busy: boolean;
-	statusText: string;
-	shareReady: boolean;
-	htmlCanvasActive: boolean;
-	htmlCanvasFailed: boolean;
-	viewport: CanvasViewport;
-	chatDockPosition: ChatDockPosition;
-	chatDockMinimized: boolean;
-}
+type LucideIconNode = typeof Square;
 
 interface CardDragState {
 	id: string;
@@ -76,12 +53,6 @@ interface CardDragState {
 	moved: boolean;
 }
 
-interface CanvasViewport {
-	x: number;
-	y: number;
-	zoom: number;
-}
-
 interface CanvasPanState {
 	pointerId: number;
 	startClientX: number;
@@ -90,45 +61,7 @@ interface CanvasPanState {
 	startY: number;
 }
 
-const MIN_CANVAS_ZOOM = 0.25;
-const MAX_CANVAS_ZOOM = 2.5;
-const CANVAS_ZOOM_SENSITIVITY = 0.0018;
-const GRID_SIZE = 48;
-const CARD_PLACEMENT_GAP = 32;
-
-const state: AppState = {
-	authenticated: false,
-	authProviders: [],
-	models: [],
-	recentWorkspaces: [],
-	cards: [],
-	messages: [
-		{
-			id: "system-start",
-			author: "System",
-			text: "Open a folder to start an analytics session.",
-			timestamp: new Date().toISOString(),
-		},
-	],
-	queuedSteering: [],
-	queuedFollowUp: [],
-	tasks: new Map(),
-	taskOrder: [],
-	selectedIds: new Set(),
-	loadingCardIds: new Set(),
-	busy: false,
-	statusText: "No workspace",
-	shareReady: false,
-	htmlCanvasActive: false,
-	htmlCanvasFailed: false,
-	viewport: {
-		x: 0,
-		y: 0,
-		zoom: 1,
-	},
-	chatDockPosition: readChatDockPosition(),
-	chatDockMinimized: readChatDockMinimized(),
-};
+const state: AppState = createInitialState(readChatDockPosition(), readChatDockMinimized());
 
 const api = window.piAnalytics;
 const appRoot = requireElement<HTMLDivElement>("appRoot");
@@ -195,24 +128,15 @@ function requireElement<T extends HTMLElement>(id: string): T {
 	return element as T;
 }
 
-function readChatDockPosition(): ChatDockPosition {
-	const stored = localStorage.getItem("pi-analytics-chat-dock");
-	return stored === "right" || stored === "bottom" ? stored : "bottom";
-}
-
-function readChatDockMinimized(): boolean {
-	return localStorage.getItem("pi-analytics-chat-minimized") === "true";
-}
-
-function setChatDockPosition(position: ChatDockPosition): void {
+function setChatDockPosition(position: AppState["chatDockPosition"]): void {
 	state.chatDockPosition = position;
-	localStorage.setItem("pi-analytics-chat-dock", position);
+	writeChatDockPosition(position);
 	renderChatDock();
 }
 
 function setChatDockMinimized(minimized: boolean): void {
 	state.chatDockMinimized = minimized;
-	localStorage.setItem("pi-analytics-chat-minimized", minimized ? "true" : "false");
+	writeChatDockMinimized(minimized);
 	renderChatDock();
 }
 
@@ -287,7 +211,7 @@ function renderStatus(): void {
 	const keptCount = state.cards.filter((card) => card.kept).length;
 	const workspace = state.cwd ? compactPath(state.cwd) : "No workspace";
 	const canvasStatus = cardCount === 0 ? "empty canvas" : keptCount > 0 ? `${cardCount} items, ${keptCount} kept` : `${cardCount} items`;
-	const activeTask = activeTaskView();
+	const activeTask = activeTaskView(state);
 	const activeBusy = activeTask ? isTaskBusy(activeTask) : state.busy;
 	topStatus.textContent = !state.authenticated
 		? "Login required"
@@ -326,36 +250,8 @@ function renderChatDock(): void {
 }
 
 function renderChatTabs(): void {
-	chatTabs.replaceChildren();
-	const visibleTasks = state.taskOrder
-		.map((taskId) => state.tasks.get(taskId))
-		.filter((task): task is TaskView => task !== undefined && isTaskBusy(task));
-	if (state.activeTaskId && !visibleTasks.some((task) => task.id === state.activeTaskId)) {
-		state.activeTaskId = undefined;
-	}
-	chatTabs.classList.toggle("open", visibleTasks.length > 0);
-	if (visibleTasks.length === 0) {
-		return;
-	}
-
-	chatTabs.appendChild(createChatTab("Main", undefined, !state.activeTaskId, state.busy ? "working" : "complete"));
-	for (const task of visibleTasks) {
-		chatTabs.appendChild(createChatTab(task.title, task.id, state.activeTaskId === task.id, task.status));
-	}
-}
-
-function createChatTab(label: string, taskId: string | undefined, active: boolean, status: string): HTMLButtonElement {
-	const button = document.createElement("button");
-	button.type = "button";
-	button.className = ["chat-tab", active ? "active" : "", `status-${status}`].filter(Boolean).join(" ");
-	button.textContent = label;
-	button.title = label;
-	if (taskId) {
-		button.dataset.taskId = taskId;
-	} else {
-		button.dataset.mainTab = "true";
-	}
-	return button;
+	const visibleTasks = visibleTaskViews(state);
+	renderChatTabsView(chatTabs, visibleTasks, state.activeTaskId, state.busy);
 }
 
 function renderRecentWorkspaces(): void {
@@ -396,39 +292,15 @@ function renderModels(): void {
 }
 
 function renderChat(): void {
-	const stickToBottom = shouldStickChatToBottom(chatLog);
-	chatLog.replaceChildren();
-	const activeTask = activeTaskView();
+	const activeTask = activeTaskView(state);
 	const baseMessages = activeTask?.messages ?? state.messages;
 	const streaming = activeTask?.streaming ?? state.streaming;
-	const messages = streaming
-		? [
-				...baseMessages,
-				{
-					id: `stream-${streaming.id}`,
-					author: "Pi" as const,
-					text: streaming.text,
-					timestamp: new Date().toISOString(),
-				},
-			]
-		: baseMessages;
-
-	for (const message of messages.slice(-10)) {
-		const row = document.createElement("div");
-		row.className = "message";
-		const author = document.createElement("strong");
-		author.textContent = message.author;
-		row.append(author, document.createTextNode(` ${message.text}`));
-		chatLog.appendChild(row);
-	}
+	renderChatLog(chatLog, baseMessages, streaming);
 	renderAgentLoading();
-	if (stickToBottom) {
-		chatLog.scrollTop = chatLog.scrollHeight;
-	}
 }
 
 function renderAgentLoading(): void {
-	const activeTask = activeTaskView();
+	const activeTask = activeTaskView(state);
 	const activeBusy = activeTask ? isTaskBusy(activeTask) : state.busy;
 	chatDock.classList.toggle("loading", activeBusy);
 	agentLoading.classList.toggle("open", activeBusy);
@@ -436,451 +308,44 @@ function renderAgentLoading(): void {
 }
 
 function renderQueue(): void {
-	queueStack.replaceChildren();
-	const activeTask = activeTaskView();
+	const activeTask = activeTaskView(state);
 	const queuedSteering = activeTask?.queuedSteering ?? state.queuedSteering;
 	const queuedFollowUp = activeTask?.queuedFollowUp ?? state.queuedFollowUp;
-	for (const item of queuedSteering) {
-		queueStack.appendChild(createQueuedMessage("Steering", item));
-	}
-	for (const item of queuedFollowUp) {
-		queueStack.appendChild(createQueuedMessage("Queued next", item));
-	}
-	queueStack.classList.toggle("open", queuedSteering.length + queuedFollowUp.length > 0);
-}
-
-function createQueuedMessage(label: string, text: string): HTMLElement {
-	const item = document.createElement("div");
-	item.className = "queued-message";
-	const strong = document.createElement("strong");
-	strong.textContent = label;
-	const body = document.createElement("span");
-	body.textContent = text;
-	item.append(strong, body);
-	return item;
-}
-
-function shouldStickChatToBottom(element: HTMLElement): boolean {
-	return element.scrollHeight - element.scrollTop - element.clientHeight < 36;
+	renderQueueStack(queueStack, queuedSteering, queuedFollowUp);
 }
 
 function renderCards(): void {
 	emptyHint.classList.toggle("hidden", state.cards.length > 0);
-	cardHost.replaceChildren(...state.cards.map((card) => createCardElement(card, false, state.loadingCardIds.has(card.id))));
-	workspaceCanvas.replaceChildren(...state.cards.map((card) => createCardElement(card, true, state.loadingCardIds.has(card.id))));
+	cardHost.replaceChildren(
+		...state.cards.map((card) =>
+			createCardElement(card, {
+				clone: false,
+				loading: state.loadingCardIds.has(card.id),
+				selected: state.selectedIds.has(card.id),
+			}),
+		),
+	);
+	workspaceCanvas.replaceChildren(
+		...state.cards.map((card) =>
+			createCardElement(card, {
+				clone: true,
+				loading: state.loadingCardIds.has(card.id),
+				selected: state.selectedIds.has(card.id),
+			}),
+		),
+	);
 }
 
 function renderSelection(): void {
-	const selected = selectedCards();
+	const selected = selectedCards(state);
 	contextBar.classList.toggle("open", selected.length > 0);
 	selectedCount.textContent = `${selected.length} selected`;
 	selectedNote.classList.toggle("open", selected.length > 0);
 	selectedNote.textContent = selected.length > 0 ? `Using: ${selected.map((card) => card.title).join(", ")}` : "";
 }
 
-function createCardElement(card: CanvasCard, clone: boolean, loading = false): HTMLElement {
-	const article = document.createElement("article");
-	if (clone) {
-		article.ariaHidden = "true";
-	}
-	article.className = [
-		"canvas-card",
-		card.type === "html" ? "html-card" : "",
-		state.selectedIds.has(card.id) ? "selected" : "",
-		loading || card.status === "working" ? "loading" : "",
-		card.kept ? "kept" : "",
-		card.status === "error" ? "error" : "",
-	]
-		.filter(Boolean)
-		.join(" ");
-	article.dataset.id = card.id;
-	setCardPosition(article, card.position);
-
-	const head = document.createElement("div");
-	head.className = "card-head";
-	const title = document.createElement("div");
-	title.className = "card-title";
-	const h2 = document.createElement("h2");
-	h2.textContent = card.title;
-	const subtitle = document.createElement("p");
-	subtitle.textContent = card.subtitle;
-	title.append(h2, subtitle);
-	const actions = document.createElement("div");
-	actions.className = "card-actions";
-	const status = document.createElement("span");
-	status.className = `status-pill ${card.kept ? "kept" : card.status}`;
-	status.textContent = loading ? "Updating" : card.kept ? "Kept" : card.statusLabel;
-	actions.appendChild(status);
-	actions.appendChild(actionButton("Fullscreen", "open", clone));
-	if (card.type === "report" || card.type === "html" || card.kept) {
-		actions.appendChild(actionButton("Export", "export", clone));
-	}
-	actions.appendChild(actionButton("Close", "close", clone));
-	head.append(title, actions);
-
-	const body = document.createElement("div");
-	body.className = "card-body";
-	appendCardBody(body, card);
-
-	article.append(head);
-	if (loading || card.status === "working") {
-		article.appendChild(createCardLoading(loading ? "Updating" : card.statusLabel, card.progress));
-	}
-	article.appendChild(body);
-	return article;
-}
-
-function actionButton(label: string, action: string, inert: boolean): HTMLButtonElement {
-	const button = document.createElement("button");
-	button.className = `icon-button card-action ${action}-action`;
-	button.type = "button";
-	button.dataset.action = action;
-	button.ariaLabel = label;
-	button.title = label;
-	if (action === "open") {
-		button.appendChild(createLucideIcon(Maximize2, { class: "lucide-icon", "aria-hidden": "true" }));
-	} else if (action === "close") {
-		button.appendChild(createLucideIcon(X, { class: "lucide-icon", "aria-hidden": "true" }));
-	} else {
-		button.appendChild(createLucideIcon(Download, { class: "lucide-icon", "aria-hidden": "true" }));
-	}
-	if (inert) {
-		button.tabIndex = -1;
-	}
-	return button;
-}
-
-function createCardLoading(label: string, progress: number | undefined): HTMLElement {
-	const loading = document.createElement("div");
-	loading.className = "card-loading";
-	const text = document.createElement("span");
-	text.textContent = label;
-	const track = document.createElement("div");
-	track.className = "card-loading-track";
-	const fill = document.createElement("span");
-	fill.className = progress === undefined ? "card-loading-fill indeterminate" : "card-loading-fill";
-	if (progress !== undefined) {
-		fill.style.setProperty("--progress", `${progress}%`);
-	}
-	track.appendChild(fill);
-	loading.append(text, track);
-	return loading;
-}
-
-function setCardPosition(element: HTMLElement, position: CanvasCardPosition): void {
-	element.style.setProperty("--x", `${position.x}px`);
-	element.style.setProperty("--y", `${position.y}px`);
-	element.style.setProperty("--w", `${position.w}px`);
-	element.style.setProperty("--h", `${position.h}px`);
-}
-
 function renderCanvasViewport(): void {
 	cardHost.style.transform = `translate(${state.viewport.x}px, ${state.viewport.y}px) scale(${state.viewport.zoom})`;
-}
-
-function appendCardBody(body: HTMLElement, card: CanvasCard): void {
-	if (card.status === "working") {
-		const text = document.createElement("div");
-		text.className = "markdown-body";
-		appendMarkdown(text, card.body);
-		const lines = document.createElement("div");
-		lines.className = "analysis-lines";
-		lines.ariaHidden = "true";
-		lines.append(document.createElement("span"), document.createElement("span"), document.createElement("span"));
-		for (const child of lines.children) child.className = "writing-line";
-		body.append(text, lines);
-		return;
-	}
-
-	if (card.type === "html" && card.html) {
-		const artifact = document.createElement("div");
-		artifact.className = "html-artifact";
-		artifact.innerHTML = sanitizeCanvasHtml(card.html);
-		body.appendChild(artifact);
-		if (card.body) {
-			const caption = document.createElement("p");
-			caption.className = "artifact-caption";
-			caption.textContent = card.body;
-			body.appendChild(caption);
-		}
-		return;
-	}
-
-	if (card.type === "chart" && card.metrics) {
-		for (const metric of card.metrics) {
-			const row = document.createElement("div");
-			row.className = "metric-row";
-			const label = document.createElement("span");
-			label.textContent = metric.label;
-			const track = document.createElement("div");
-			track.className = "bar-track";
-			const fill = document.createElement("span");
-			fill.className = "bar-fill";
-			fill.style.setProperty("--bar", `${metric.value}%`);
-			const value = document.createElement("b");
-			value.textContent = String(metric.value);
-			track.appendChild(fill);
-			row.append(label, track, value);
-			body.appendChild(row);
-		}
-		return;
-	}
-
-	if (card.type === "table" && card.rows) {
-		body.appendChild(createTable(card.rows));
-		return;
-	}
-
-	if (card.type === "diagram") {
-		body.appendChild(createDiagram(card.nodes ?? ["Inputs", "Tables", "Signals", "Report"]));
-		return;
-	}
-
-	const markdown = document.createElement("div");
-	markdown.className = "markdown-body";
-	appendMarkdown(markdown, card.body);
-	body.appendChild(markdown);
-
-	if (card.type === "report" && card.sections) {
-		const sections = document.createElement("div");
-		sections.className = "report-sections";
-		for (const section of card.sections) {
-			const item = document.createElement("div");
-			item.className = "report-section";
-			const title = document.createElement("b");
-			title.textContent = section.title;
-			const sectionBody = document.createElement("div");
-			sectionBody.className = "report-section-body";
-			appendMarkdown(sectionBody, section.body);
-			item.append(title, sectionBody);
-			sections.appendChild(item);
-		}
-		body.appendChild(sections);
-		return;
-	}
-
-	if (card.type !== "summary" && card.points && card.points.length > 0) {
-		const list = document.createElement("ul");
-		list.className = "summary-list";
-		for (const point of card.points) {
-			const item = document.createElement("li");
-			item.textContent = point;
-			list.appendChild(item);
-		}
-		body.appendChild(list);
-	}
-}
-
-function sanitizeCanvasHtml(value: string): string {
-	const template = document.createElement("template");
-	template.innerHTML = value;
-	for (const element of Array.from(template.content.querySelectorAll("*"))) {
-		if (isForbiddenCanvasElement(element)) {
-			element.remove();
-			continue;
-		}
-		for (const attribute of Array.from(element.attributes)) {
-			const name = attribute.name.toLowerCase();
-			const text = attribute.value.trim().toLowerCase();
-			if (name.startsWith("on") || name === "srcdoc") {
-				element.removeAttribute(attribute.name);
-				continue;
-			}
-			if ((name === "href" || name === "src" || name === "xlink:href" || name === "action") && text.startsWith("javascript:")) {
-				element.removeAttribute(attribute.name);
-				continue;
-			}
-			if (name === "style") {
-				element.setAttribute(attribute.name, sanitizeCss(attribute.value));
-			}
-		}
-		if (element.tagName.toLowerCase() === "style") {
-			element.textContent = sanitizeCss(element.textContent ?? "");
-		}
-	}
-	return template.innerHTML;
-}
-
-function isForbiddenCanvasElement(element: Element): boolean {
-	return ["script", "iframe", "object", "embed", "link", "meta", "base"].includes(element.tagName.toLowerCase());
-}
-
-function sanitizeCss(value: string): string {
-	return value
-		.replace(/@import[^;]+;?/gi, "")
-		.replace(/url\s*\([^)]*\)/gi, "")
-		.replace(/expression\s*\([^)]*\)/gi, "")
-		.replace(/javascript:/gi, "");
-}
-
-function appendMarkdown(parent: HTMLElement, markdown: string): void {
-	const lines = markdown.split(/\r?\n/);
-	let paragraph: string[] = [];
-	let list: HTMLUListElement | HTMLOListElement | undefined;
-	let codeLines: string[] | undefined;
-
-	const flushParagraph = () => {
-		if (paragraph.length === 0) return;
-		const element = document.createElement("p");
-		appendInlineMarkdown(element, paragraph.join(" "));
-		parent.appendChild(element);
-		paragraph = [];
-	};
-	const flushList = () => {
-		if (!list) return;
-		parent.appendChild(list);
-		list = undefined;
-	};
-	const flushCode = () => {
-		if (!codeLines) return;
-		const pre = document.createElement("pre");
-		const code = document.createElement("code");
-		code.textContent = codeLines.join("\n");
-		pre.appendChild(code);
-		parent.appendChild(pre);
-		codeLines = undefined;
-	};
-
-	for (const line of lines) {
-		if (line.trim().startsWith("```")) {
-			if (codeLines) {
-				flushCode();
-			} else {
-				flushParagraph();
-				flushList();
-				codeLines = [];
-			}
-			continue;
-		}
-		if (codeLines) {
-			codeLines.push(line);
-			continue;
-		}
-
-		const trimmed = line.trim();
-		if (!trimmed) {
-			flushParagraph();
-			flushList();
-			continue;
-		}
-
-		const heading = /^(#{1,3})\s+(.+)$/.exec(trimmed);
-		if (heading) {
-			flushParagraph();
-			flushList();
-			const level = String(Math.min(3, heading[1].length + 2));
-			const element = document.createElement(`h${level}`);
-			appendInlineMarkdown(element, heading[2]);
-			parent.appendChild(element);
-			continue;
-		}
-
-		const unordered = /^[-*]\s+(.+)$/.exec(trimmed);
-		const ordered = /^\d+\.\s+(.+)$/.exec(trimmed);
-		if (unordered || ordered) {
-			flushParagraph();
-			const orderedList = Boolean(ordered);
-			if (!list || (orderedList && list.tagName !== "OL") || (!orderedList && list.tagName !== "UL")) {
-				flushList();
-				list = orderedList ? document.createElement("ol") : document.createElement("ul");
-			}
-			const item = document.createElement("li");
-			appendInlineMarkdown(item, (ordered ?? unordered)?.[1] ?? "");
-			list.appendChild(item);
-			continue;
-		}
-
-		paragraph.push(trimmed);
-	}
-
-	flushParagraph();
-	flushList();
-	flushCode();
-}
-
-function appendInlineMarkdown(parent: HTMLElement, text: string): void {
-	const tokenPattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g;
-	let cursor = 0;
-	for (const match of text.matchAll(tokenPattern)) {
-		const token = match[0];
-		if (match.index > cursor) {
-			parent.appendChild(document.createTextNode(text.slice(cursor, match.index)));
-		}
-		parent.appendChild(inlineMarkdownNode(token));
-		cursor = match.index + token.length;
-	}
-	if (cursor < text.length) {
-		parent.appendChild(document.createTextNode(text.slice(cursor)));
-	}
-}
-
-function inlineMarkdownNode(token: string): Node {
-	if (token.startsWith("`") && token.endsWith("`")) {
-		const code = document.createElement("code");
-		code.textContent = token.slice(1, -1);
-		return code;
-	}
-	if (token.startsWith("**") && token.endsWith("**")) {
-		const strong = document.createElement("strong");
-		strong.textContent = token.slice(2, -2);
-		return strong;
-	}
-	if (token.startsWith("*") && token.endsWith("*")) {
-		const em = document.createElement("em");
-		em.textContent = token.slice(1, -1);
-		return em;
-	}
-	const link = /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/.exec(token);
-	if (link) {
-		const anchor = document.createElement("a");
-		anchor.textContent = link[1];
-		anchor.href = link[2];
-		anchor.target = "_blank";
-		anchor.rel = "noreferrer";
-		return anchor;
-	}
-	return document.createTextNode(token);
-}
-
-function createTable(rows: string[][]): HTMLTableElement {
-	const table = document.createElement("table");
-	table.className = "mini-table";
-	const head = document.createElement("thead");
-	const headRow = document.createElement("tr");
-	for (const label of ["Item", "Signal", "Next"]) {
-		const cell = document.createElement("th");
-		cell.textContent = label;
-		headRow.appendChild(cell);
-	}
-	head.appendChild(headRow);
-	const body = document.createElement("tbody");
-	for (const row of rows) {
-		const tableRow = document.createElement("tr");
-		for (const value of row.slice(0, 3)) {
-			const cell = document.createElement("td");
-			cell.textContent = value;
-			tableRow.appendChild(cell);
-		}
-		body.appendChild(tableRow);
-	}
-	table.append(head, body);
-	return table;
-}
-
-function createDiagram(labels: string[]): HTMLElement {
-	const diagram = document.createElement("div");
-	diagram.className = "diagram";
-	for (const [index, className] of ["a", "b", "c", "d"].entries()) {
-		const node = document.createElement("div");
-		node.className = `node ${className}`;
-		const title = document.createElement("b");
-		title.textContent = labels[index] ?? "Node";
-		const subtitle = document.createElement("span");
-		subtitle.textContent = index === 0 ? "Source" : index === 3 ? "Output" : "Relationship";
-		node.append(title, subtitle);
-		diagram.appendChild(node);
-	}
-	return diagram;
 }
 
 function scheduleCanvasPaint(): void {
@@ -889,79 +354,22 @@ function scheduleCanvasPaint(): void {
 	}
 	canvasFrame = window.requestAnimationFrame(() => {
 		canvasFrame = undefined;
-		paintCanvas();
+		paintCanvasFrame({
+			workspaceCanvas,
+			canvasShell,
+			viewport: state.viewport,
+			cards: state.cards,
+			htmlCanvasFailed: state.htmlCanvasFailed,
+			onHtmlCanvasActiveChange: (active) => {
+				state.htmlCanvasActive = active;
+			},
+			onHtmlCanvasFailure: (message) => {
+				state.htmlCanvasFailed = true;
+				state.htmlCanvasActive = false;
+				showToast(message);
+			},
+		});
 	});
-}
-
-function paintCanvas(): void {
-	const ctx = workspaceCanvas.getContext("2d");
-	if (!ctx) return;
-	const rect = workspaceCanvas.getBoundingClientRect();
-	const scale = window.devicePixelRatio || 1;
-	const width = Math.max(1, Math.floor(rect.width * scale));
-	const height = Math.max(1, Math.floor(rect.height * scale));
-	if (workspaceCanvas.width !== width || workspaceCanvas.height !== height) {
-		workspaceCanvas.width = width;
-		workspaceCanvas.height = height;
-	}
-
-	ctx.setTransform(scale, 0, 0, scale, 0, 0);
-	ctx.clearRect(0, 0, rect.width, rect.height);
-	drawGrid(ctx, rect.width, rect.height, state.viewport);
-
-	const drawElementImage = ctx.drawElementImage;
-	const supportsHtmlCanvas = typeof drawElementImage === "function" && !state.htmlCanvasFailed && window.innerWidth > 860;
-	state.htmlCanvasActive = supportsHtmlCanvas;
-	canvasShell.classList.toggle("html-canvas-active", supportsHtmlCanvas);
-
-	if (!supportsHtmlCanvas) return;
-
-	try {
-		const clones = Array.from(workspaceCanvas.querySelectorAll<HTMLElement>(":scope > .canvas-card"));
-		ctx.save();
-		try {
-			ctx.translate(state.viewport.x, state.viewport.y);
-			ctx.scale(state.viewport.zoom, state.viewport.zoom);
-			for (const clone of clones) {
-				const card = state.cards.find((item) => item.id === clone.dataset.id);
-				if (!card) continue;
-				drawElementImage.call(ctx, clone, card.position.x, card.position.y);
-			}
-		} finally {
-			ctx.restore();
-		}
-	} catch (error) {
-		state.htmlCanvasFailed = true;
-		state.htmlCanvasActive = false;
-		canvasShell.classList.remove("html-canvas-active");
-		showToast(error instanceof Error ? error.message : "HTML-in-Canvas paint failed.");
-	}
-}
-
-function drawGrid(ctx: CanvasRenderingContext2D, width: number, height: number, viewport: CanvasViewport): void {
-	const step = GRID_SIZE * viewport.zoom;
-	const startX = positiveModulo(viewport.x, step);
-	const startY = positiveModulo(viewport.y, step);
-	ctx.save();
-	ctx.strokeStyle = "rgba(16, 17, 20, 0.035)";
-	ctx.lineWidth = 1;
-	for (let x = startX; x <= width; x += step) {
-		ctx.beginPath();
-		ctx.moveTo(x, 0);
-		ctx.lineTo(x, height);
-		ctx.stroke();
-	}
-	for (let y = startY; y <= height; y += step) {
-		ctx.beginPath();
-		ctx.moveTo(0, y);
-		ctx.lineTo(width, y);
-		ctx.stroke();
-	}
-	ctx.restore();
-}
-
-function positiveModulo(value: number, divisor: number): number {
-	return ((value % divisor) + divisor) % divisor;
 }
 
 async function openWorkspace(): Promise<void> {
@@ -1087,7 +495,7 @@ async function applyPendingModelSelection(): Promise<void> {
 async function submitPrompt(text: string, streamingBehavior?: "steer" | "followUp"): Promise<void> {
 	const trimmed = text.trim();
 	if (!trimmed || !state.cwd || !state.authenticated) return;
-	const activeTask = activeTaskView();
+	const activeTask = activeTaskView(state);
 	if (activeTask) {
 		const behavior = isTaskBusy(activeTask) ? streamingBehavior ?? "followUp" : streamingBehavior;
 		try {
@@ -1103,7 +511,7 @@ async function submitPrompt(text: string, streamingBehavior?: "steer" | "followU
 		}
 		return;
 	}
-	const selected = selectedCards();
+	const selected = selectedCards(state);
 	const queueing = state.busy;
 	if (!queueing) {
 		state.loadingCardIds = new Set(selected.map((card) => card.id));
@@ -1250,52 +658,11 @@ function addTaskSystemMessage(taskId: string, text: string): void {
 }
 
 function upsertTask(snapshot: TaskSnapshot): void {
-	const existing = state.tasks.get(snapshot.id);
-	if (!isTaskSnapshotBusy(snapshot)) {
-		if (existing) {
-			existing.streaming = undefined;
-			existing.queuedSteering = [];
-			existing.queuedFollowUp = [];
-		}
-		removeTaskView(snapshot.id);
-		renderChatTabs();
-		renderStatus();
-		renderChat();
-		renderQueue();
-		return;
-	}
-	if (existing) {
-		existing.groupId = snapshot.groupId;
-		existing.sessionId = snapshot.sessionId;
-		existing.cardId = snapshot.cardId;
-		existing.title = snapshot.title;
-		existing.status = snapshot.status;
-		existing.statusText = snapshot.statusText;
-		existing.targetPaths = [...snapshot.targetPaths];
-		existing.requiresWrites = snapshot.requiresWrites;
-	} else {
-		state.tasks.set(snapshot.id, {
-			...snapshot,
-			targetPaths: [...snapshot.targetPaths],
-			messages: [taskSystemMessage(snapshot, `Task started: ${snapshot.title}`)],
-			queuedSteering: [],
-			queuedFollowUp: [],
-		});
-		state.taskOrder.push(snapshot.id);
-	}
+	applyTaskSnapshot(state, snapshot);
 	renderChatTabs();
 	renderStatus();
 	renderChat();
 	renderQueue();
-}
-
-function taskSystemMessage(task: TaskSnapshot, text: string): ChatMessage {
-	return {
-		id: `task-system-${task.id}-${Date.now()}`,
-		author: "System",
-		text,
-		timestamp: new Date().toISOString(),
-	};
 }
 
 function upsertCard(card: CanvasCard): void {
@@ -1319,143 +686,6 @@ function upsertCard(card: CanvasCard): void {
 	state.loadingCardIds.delete(card.id);
 	render();
 	scheduleSaveBoard();
-}
-
-function resolveNewCardPosition(position: CanvasCardPosition, cards: CanvasCard[]): CanvasCardPosition {
-	const initial = normalizePosition(position);
-	if (!overlapsAny(initial, cards)) {
-		return initial;
-	}
-
-	const rowCards = cards
-		.map((card) => card.position)
-		.filter((candidate) => rangesOverlap(candidate.y, candidate.y + candidate.h, initial.y, initial.y + initial.h));
-	if (rowCards.length > 0) {
-		const rowX = Math.max(...rowCards.map((candidate) => candidate.x + candidate.w)) + CARD_PLACEMENT_GAP;
-		const rowY = Math.min(...rowCards.map((candidate) => candidate.y));
-		const rowPosition = normalizePosition({ ...initial, x: rowX, y: rowY });
-		if (!overlapsAny(rowPosition, cards)) {
-			return rowPosition;
-		}
-	}
-
-	for (const candidate of placementCandidates(initial, cards)) {
-		if (!overlapsAny(candidate, cards)) {
-			return candidate;
-		}
-	}
-
-	const rightEdge = Math.max(...cards.map((card) => card.position.x + card.position.w), initial.x);
-	return normalizePosition({ ...initial, x: rightEdge + CARD_PLACEMENT_GAP });
-}
-
-function placementCandidates(position: CanvasCardPosition, cards: CanvasCard[]): CanvasCardPosition[] {
-	const minX = Math.min(position.x, ...cards.map((card) => card.position.x), 72);
-	const minY = Math.min(position.y, ...cards.map((card) => card.position.y), 70);
-	const maxRight = Math.max(position.x + position.w, ...cards.map((card) => card.position.x + card.position.w));
-	const maxBottom = Math.max(position.y + position.h, ...cards.map((card) => card.position.y + card.position.h));
-	const columnStep = position.w + CARD_PLACEMENT_GAP;
-	const rowStep = position.h + CARD_PLACEMENT_GAP;
-	const columnCount = Math.max(4, Math.ceil((maxRight - minX) / columnStep) + 3);
-	const rowCount = Math.max(4, Math.ceil((maxBottom - minY) / rowStep) + 3);
-	const candidates: CanvasCardPosition[] = [];
-
-	for (const card of cards) {
-		candidates.push(
-			normalizePosition({ ...position, x: card.position.x + card.position.w + CARD_PLACEMENT_GAP, y: card.position.y }),
-		);
-		candidates.push(
-			normalizePosition({ ...position, x: card.position.x, y: card.position.y + card.position.h + CARD_PLACEMENT_GAP }),
-		);
-	}
-
-	for (let row = 0; row < rowCount; row += 1) {
-		for (let column = 0; column < columnCount; column += 1) {
-			candidates.push(
-				normalizePosition({
-					...position,
-					x: minX + column * columnStep,
-					y: minY + row * rowStep,
-				}),
-			);
-		}
-	}
-
-	return candidates;
-}
-
-function normalizePosition(position: CanvasCardPosition): CanvasCardPosition {
-	return {
-		x: Math.round(position.x),
-		y: Math.round(position.y),
-		w: Math.round(position.w),
-		h: Math.round(position.h),
-	};
-}
-
-function overlapsAny(position: CanvasCardPosition, cards: CanvasCard[]): boolean {
-	return cards.some((card) => positionsOverlap(position, card.position, CARD_PLACEMENT_GAP));
-}
-
-function positionsOverlap(a: CanvasCardPosition, b: CanvasCardPosition, gap: number): boolean {
-	return (
-		a.x < b.x + b.w + gap &&
-		a.x + a.w + gap > b.x &&
-		a.y < b.y + b.h + gap &&
-		a.y + a.h + gap > b.y
-	);
-}
-
-function rangesOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
-	return aStart < bEnd && aEnd > bStart;
-}
-
-function activeTaskView(): TaskView | undefined {
-	if (!state.activeTaskId) {
-		return undefined;
-	}
-	return state.tasks.get(state.activeTaskId);
-}
-
-function isTaskBusy(task: TaskView): boolean {
-	return task.status === "queued" || task.status === "working";
-}
-
-function isTaskSnapshotBusy(task: TaskSnapshot): boolean {
-	return task.status === "queued" || task.status === "working";
-}
-
-function removeTaskView(taskId: string): void {
-	state.tasks.delete(taskId);
-	state.taskOrder = state.taskOrder.filter((id) => id !== taskId);
-	if (state.activeTaskId === taskId) {
-		state.activeTaskId = undefined;
-	}
-}
-
-function selectedCards(): CanvasCard[] {
-	return state.cards.filter((card) => state.selectedIds.has(card.id));
-}
-
-function cardContext(card: CanvasCard): PromptCardContext {
-	return {
-		id: card.id,
-		type: card.type,
-		title: card.title,
-		body: card.body,
-		position: card.position,
-		kept: card.kept,
-	};
-}
-
-function toggleSelection(id: string, additive: boolean): void {
-	if (!additive) state.selectedIds.clear();
-	if (state.selectedIds.has(id) && additive) {
-		state.selectedIds.delete(id);
-	} else {
-		state.selectedIds.add(id);
-	}
-	render();
 }
 
 function beginCardDrag(event: PointerEvent): void {
@@ -1544,8 +774,14 @@ function beginCanvasPan(event: PointerEvent): void {
 
 function moveCanvasPan(event: PointerEvent): void {
 	if (!canvasPan || event.pointerId !== canvasPan.pointerId) return;
-	state.viewport.x = Math.round(canvasPan.startX + event.clientX - canvasPan.startClientX);
-	state.viewport.y = Math.round(canvasPan.startY + event.clientY - canvasPan.startClientY);
+	state.viewport = panCanvasViewport(
+		state.viewport,
+		{ x: canvasPan.startX, y: canvasPan.startY },
+		canvasPan.startClientX,
+		canvasPan.startClientY,
+		event.clientX,
+		event.clientY,
+	);
 	renderCanvasViewport();
 	scheduleCanvasPaint();
 	event.preventDefault();
@@ -1561,34 +797,20 @@ function zoomCanvas(event: WheelEvent): void {
 	const rect = canvasShell.getBoundingClientRect();
 	const screenX = event.clientX - rect.left;
 	const screenY = event.clientY - rect.top;
-	const worldX = (screenX - state.viewport.x) / state.viewport.zoom;
-	const worldY = (screenY - state.viewport.y) / state.viewport.zoom;
-	const unclampedZoom = state.viewport.zoom * Math.exp(-event.deltaY * CANVAS_ZOOM_SENSITIVITY);
-	const nextZoom = Math.min(MAX_CANVAS_ZOOM, Math.max(MIN_CANVAS_ZOOM, unclampedZoom));
-	state.viewport.x = Math.round(screenX - worldX * nextZoom);
-	state.viewport.y = Math.round(screenY - worldY * nextZoom);
-	state.viewport.zoom = nextZoom;
+	state.viewport = zoomCanvasViewport(state.viewport, { screenX, screenY, deltaY: event.deltaY });
 	renderCanvasViewport();
 	scheduleCanvasPaint();
 	event.preventDefault();
 }
 
 function resetCanvasViewport(): void {
-	state.viewport = {
-		x: 0,
-		y: 0,
-		zoom: 1,
-	};
+	state.viewport = { ...DEFAULT_CANVAS_VIEWPORT };
 	renderCanvasViewport();
 }
 
 function keepSelected(): void {
 	if (!state.authenticated) return;
-	for (const card of selectedCards()) {
-		card.kept = true;
-		card.status = "kept";
-		card.statusLabel = "Kept";
-	}
+	keepSelectedCards(state);
 	render();
 	scheduleSaveBoard();
 	if (state.selectedIds.size > 0) showToast("Selected item kept.");
@@ -1597,11 +819,7 @@ function keepSelected(): void {
 function deleteSelected(): void {
 	if (!state.authenticated) return;
 	if (state.selectedIds.size === 0) return;
-	state.cards = state.cards.filter((card) => !state.selectedIds.has(card.id));
-	for (const id of state.selectedIds) {
-		state.loadingCardIds.delete(id);
-	}
-	state.selectedIds.clear();
+	deleteSelectedCards(state);
 	render();
 	scheduleSaveBoard();
 	showToast("Selected item deleted.");
@@ -1609,13 +827,7 @@ function deleteSelected(): void {
 
 function deleteCard(id: string): void {
 	if (!state.authenticated) return;
-	const deleted = state.cards.find((card) => card.id === id);
-	state.cards = state.cards.filter((card) => card.id !== id);
-	state.selectedIds.delete(id);
-	state.loadingCardIds.delete(id);
-	if (deleted?.taskId === state.activeTaskId) {
-		state.activeTaskId = undefined;
-	}
+	deleteCardById(state, id);
 	render();
 	scheduleSaveBoard();
 	showToast("Canvas item closed.");
@@ -1628,7 +840,12 @@ async function openCard(id: string): Promise<void> {
 	state.activeModalId = id;
 	modalTitle.textContent = card.title;
 	modalSubtitle.textContent = card.subtitle;
-	modalBody.replaceChildren(createCardElement(card, false));
+	modalBody.replaceChildren(
+		createCardElement(card, {
+			clone: false,
+			selected: state.selectedIds.has(card.id),
+		}),
+	);
 	modal.classList.add("open");
 	try {
 		await modal.requestFullscreen();
@@ -1698,25 +915,6 @@ function showToast(text: string): void {
 	toastTimer = window.setTimeout(() => toast.classList.remove("open"), 2600);
 }
 
-function compactPath(path: string): string {
-	const parts = path.split(/[\\/]/).filter(Boolean);
-	if (parts.length <= 2) return path;
-	return `${parts.at(-2)}/${parts.at(-1)}`;
-}
-
-function workspaceLabel(workspace: RecentWorkspace): string {
-	const path = compactPath(workspace.path);
-	return workspace.name === path ? path : `${workspace.name} - ${path}`;
-}
-
-function modelValue(model: ModelSummary): string {
-	return `${model.provider}/${model.id}`;
-}
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
-
 cardHost.addEventListener("click", (event) => {
 	if (suppressNextCardClick) {
 		suppressNextCardClick = false;
@@ -1745,7 +943,8 @@ cardHost.addEventListener("click", (event) => {
 	if (card?.taskId) {
 		state.activeTaskId = state.tasks.has(card.taskId) ? card.taskId : undefined;
 	}
-	toggleSelection(cardElement.dataset.id, event.shiftKey || event.metaKey || event.ctrlKey);
+	toggleCardSelection(state, cardElement.dataset.id, event.shiftKey || event.metaKey || event.ctrlKey);
+	render();
 });
 cardHost.addEventListener("pointerdown", beginCardDrag);
 cardHost.addEventListener("pointermove", moveCardDrag);
@@ -1759,7 +958,7 @@ canvasShell.addEventListener("wheel", zoomCanvas, { passive: false });
 
 composer.addEventListener("submit", (event) => {
 	event.preventDefault();
-	const activeTask = activeTaskView();
+	const activeTask = activeTaskView(state);
 	const activeBusy = activeTask ? isTaskBusy(activeTask) : state.busy;
 	void submitPrompt(chatInput.value, activeBusy ? "followUp" : undefined);
 });
@@ -1838,7 +1037,7 @@ modelSelect.addEventListener("change", () => {
 });
 
 askSelectedButton.addEventListener("click", () => {
-	const selected = selectedCards();
+	const selected = selectedCards(state);
 	if (selected.length === 0) return;
 	chatInput.value = `Use ${selected.map((card) => card.title).join(", ")} and show the next useful analysis step`;
 	chatInput.focus();
@@ -1847,11 +1046,11 @@ askSelectedButton.addEventListener("click", () => {
 keepSelectedButton.addEventListener("click", keepSelected);
 deleteSelectedButton.addEventListener("click", deleteSelected);
 openSelectedButton.addEventListener("click", () => {
-	const first = selectedCards()[0];
+	const first = selectedCards(state)[0];
 	if (first) void openCard(first.id);
 });
 exportSelectedButton.addEventListener("click", () => {
-	void exportCards(selectedCards());
+	void exportCards(selectedCards(state));
 });
 
 modalKeepButton.addEventListener("click", () => {
