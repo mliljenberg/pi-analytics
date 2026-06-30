@@ -327,17 +327,19 @@ function renderChatDock(): void {
 
 function renderChatTabs(): void {
 	chatTabs.replaceChildren();
-	chatTabs.classList.toggle("open", state.taskOrder.length > 0);
-	if (state.taskOrder.length === 0) {
+	const visibleTasks = state.taskOrder
+		.map((taskId) => state.tasks.get(taskId))
+		.filter((task): task is TaskView => task !== undefined && isTaskBusy(task));
+	if (state.activeTaskId && !visibleTasks.some((task) => task.id === state.activeTaskId)) {
+		state.activeTaskId = undefined;
+	}
+	chatTabs.classList.toggle("open", visibleTasks.length > 0);
+	if (visibleTasks.length === 0) {
 		return;
 	}
 
 	chatTabs.appendChild(createChatTab("Main", undefined, !state.activeTaskId, state.busy ? "working" : "complete"));
-	for (const taskId of state.taskOrder) {
-		const task = state.tasks.get(taskId);
-		if (!task) {
-			continue;
-		}
+	for (const task of visibleTasks) {
 		chatTabs.appendChild(createChatTab(task.title, task.id, state.activeTaskId === task.id, task.status));
 	}
 }
@@ -996,9 +998,6 @@ function applySessionSnapshot(snapshot: SessionSnapshot): void {
 	state.tasks.clear();
 	state.taskOrder = [];
 	state.activeTaskId = undefined;
-	for (const card of state.cards) {
-		ensureTaskFromCard(card);
-	}
 	state.shareReady = snapshot.board?.shareReady ?? false;
 	state.queuedSteering = [];
 	state.queuedFollowUp = [];
@@ -1252,6 +1251,19 @@ function addTaskSystemMessage(taskId: string, text: string): void {
 
 function upsertTask(snapshot: TaskSnapshot): void {
 	const existing = state.tasks.get(snapshot.id);
+	if (!isTaskSnapshotBusy(snapshot)) {
+		if (existing) {
+			existing.streaming = undefined;
+			existing.queuedSteering = [];
+			existing.queuedFollowUp = [];
+		}
+		removeTaskView(snapshot.id);
+		renderChatTabs();
+		renderStatus();
+		renderChat();
+		renderQueue();
+		return;
+	}
 	if (existing) {
 		existing.groupId = snapshot.groupId;
 		existing.sessionId = snapshot.sessionId;
@@ -1261,11 +1273,6 @@ function upsertTask(snapshot: TaskSnapshot): void {
 		existing.statusText = snapshot.statusText;
 		existing.targetPaths = [...snapshot.targetPaths];
 		existing.requiresWrites = snapshot.requiresWrites;
-		if (snapshot.status === "complete" || snapshot.status === "error") {
-			existing.streaming = undefined;
-			existing.queuedSteering = [];
-			existing.queuedFollowUp = [];
-		}
 	} else {
 		state.tasks.set(snapshot.id, {
 			...snapshot,
@@ -1280,30 +1287,6 @@ function upsertTask(snapshot: TaskSnapshot): void {
 	renderStatus();
 	renderChat();
 	renderQueue();
-}
-
-function ensureTaskFromCard(card: CanvasCard): void {
-	if (!card.taskId || state.tasks.has(card.taskId)) {
-		return;
-	}
-	const snapshot: TaskSnapshot = {
-		id: card.taskId,
-		groupId: card.taskGroupId ?? "restored-task-group",
-		sessionId: card.taskSessionId ?? "restored-task-session",
-		cardId: card.id,
-		title: card.title,
-		status: card.status === "working" ? "working" : card.status === "error" ? "error" : "complete",
-		statusText: card.statusLabel,
-		targetPaths: [],
-		requiresWrites: false,
-	};
-	state.tasks.set(snapshot.id, {
-		...snapshot,
-		messages: [taskSystemMessage(snapshot, `Task card: ${snapshot.title}`)],
-		queuedSteering: [],
-		queuedFollowUp: [],
-	});
-	state.taskOrder.push(snapshot.id);
 }
 
 function taskSystemMessage(task: TaskSnapshot, text: string): ChatMessage {
@@ -1333,7 +1316,6 @@ function upsertCard(card: CanvasCard): void {
 			},
 		};
 	}
-	ensureTaskFromCard(card);
 	state.loadingCardIds.delete(card.id);
 	render();
 	scheduleSaveBoard();
@@ -1437,6 +1419,18 @@ function activeTaskView(): TaskView | undefined {
 
 function isTaskBusy(task: TaskView): boolean {
 	return task.status === "queued" || task.status === "working";
+}
+
+function isTaskSnapshotBusy(task: TaskSnapshot): boolean {
+	return task.status === "queued" || task.status === "working";
+}
+
+function removeTaskView(taskId: string): void {
+	state.tasks.delete(taskId);
+	state.taskOrder = state.taskOrder.filter((id) => id !== taskId);
+	if (state.activeTaskId === taskId) {
+		state.activeTaskId = undefined;
+	}
 }
 
 function selectedCards(): CanvasCard[] {
@@ -1749,8 +1743,7 @@ cardHost.addEventListener("click", (event) => {
 	}
 	const card = state.cards.find((candidate) => candidate.id === cardElement.dataset.id);
 	if (card?.taskId) {
-		ensureTaskFromCard(card);
-		state.activeTaskId = card.taskId;
+		state.activeTaskId = state.tasks.has(card.taskId) ? card.taskId : undefined;
 	}
 	toggleSelection(cardElement.dataset.id, event.shiftKey || event.metaKey || event.ctrlKey);
 });
