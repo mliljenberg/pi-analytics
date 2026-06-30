@@ -38,6 +38,9 @@ export interface CanvasCard {
 	html?: string;
 	sourceMessageIds: string[];
 	toolCallId?: string;
+	taskId?: string;
+	taskGroupId?: string;
+	taskSessionId?: string;
 }
 
 export interface PromptCardContext {

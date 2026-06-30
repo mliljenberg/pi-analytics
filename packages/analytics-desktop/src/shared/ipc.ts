@@ -74,6 +74,26 @@ export interface SendPromptRequest {
 	streamingBehavior?: "steer" | "followUp";
 }
 
+export type TaskStatus = "queued" | "working" | "complete" | "error";
+
+export interface TaskSnapshot {
+	id: string;
+	groupId: string;
+	sessionId: string;
+	cardId: string;
+	title: string;
+	status: TaskStatus;
+	statusText: string;
+	targetPaths: string[];
+	requiresWrites: boolean;
+}
+
+export interface TaskPromptRequest {
+	taskId: string;
+	text: string;
+	streamingBehavior?: "steer" | "followUp";
+}
+
 export interface SetModelRequest {
 	provider: string;
 	id: string;
@@ -93,16 +113,18 @@ export interface ChatMessageEvent {
 	author: "You" | "Pi" | "System";
 	text: string;
 	timestamp: string;
+	taskId?: string;
 }
 
 export type MainToRendererEvent =
 	| { type: "status"; text: string; busy: boolean }
 	| { type: "login-status"; message: string }
 	| { type: "diagnostic"; diagnostic: AppDiagnostic }
-	| { type: "assistant-stream"; id: string; text: string }
+	| { type: "assistant-stream"; id: string; text: string; taskId?: string }
 	| { type: "canvas-card"; card: CanvasCard }
 	| { type: "model-selected"; model: ModelSummary }
-	| { type: "queue-update"; steering: readonly string[]; followUp: readonly string[] }
+	| { type: "queue-update"; steering: readonly string[]; followUp: readonly string[]; taskId?: string }
+	| { type: "task-update"; task: TaskSnapshot }
 	| { type: "exported-report"; filePath: string }
 	| ChatMessageEvent;
 
