@@ -7,6 +7,7 @@ import type {
 	ProviderSummary,
 	RecentWorkspace,
 	SessionSnapshot,
+	TaskSnapshot,
 } from "../../src/shared/ipc.ts";
 import "./styles.css";
 import "./canvas-artifacts.css";
@@ -21,6 +22,13 @@ interface ChatMessage {
 interface StreamingMessage {
 	id: string;
 	text: string;
+}
+
+interface TaskView extends TaskSnapshot {
+	messages: ChatMessage[];
+	streaming?: StreamingMessage;
+	queuedSteering: string[];
+	queuedFollowUp: string[];
 }
 
 type ChatDockPosition = "bottom" | "right";
@@ -39,6 +47,9 @@ interface AppState {
 	streaming?: StreamingMessage;
 	queuedSteering: string[];
 	queuedFollowUp: string[];
+	tasks: Map<string, TaskView>;
+	taskOrder: string[];
+	activeTaskId?: string;
 	selectedIds: Set<string>;
 	loadingCardIds: Set<string>;
 	activeModalId?: string;
@@ -97,6 +108,8 @@ const state: AppState = {
 	],
 	queuedSteering: [],
 	queuedFollowUp: [],
+	tasks: new Map(),
+	taskOrder: [],
 	selectedIds: new Set(),
 	loadingCardIds: new Set(),
 	busy: false,
@@ -139,6 +152,7 @@ const selectedCount = requireElement<HTMLSpanElement>("selectedCount");
 const selectedNote = requireElement<HTMLDivElement>("selectedNote");
 const chatDock = requireElement<HTMLElement>("chatDock");
 const dockToggleButton = requireElement<HTMLButtonElement>("dockToggleButton");
+const chatTabs = requireElement<HTMLDivElement>("chatTabs");
 const chatLog = requireElement<HTMLDivElement>("chatLog");
 const agentLoading = requireElement<HTMLDivElement>("agentLoading");
 const agentLoadingText = requireElement<HTMLSpanElement>("agentLoadingText");
@@ -194,6 +208,7 @@ function render(): void {
 	renderModels();
 	renderRecentWorkspaces();
 	renderChatDock();
+	renderChatTabs();
 	renderChat();
 	renderQueue();
 	renderCards();
@@ -252,15 +267,19 @@ function renderStatus(): void {
 	const keptCount = state.cards.filter((card) => card.kept).length;
 	const workspace = state.cwd ? compactPath(state.cwd) : "No workspace";
 	const canvasStatus = cardCount === 0 ? "empty canvas" : keptCount > 0 ? `${cardCount} items, ${keptCount} kept` : `${cardCount} items`;
+	const activeTask = activeTaskView();
+	const activeBusy = activeTask ? isTaskBusy(activeTask) : state.busy;
 	topStatus.textContent = !state.authenticated
 		? "Login required"
-		: state.busy
+		: activeTask && isTaskBusy(activeTask)
+			? `${workspace} - ${activeTask.title}: ${activeTask.statusText}`
+			: state.busy
 			? `${workspace} - ${state.statusText}`
 			: `${workspace} - ${canvasStatus}`;
 	const locked = !state.authenticated;
 	openFolderButton.disabled = locked;
 	newBoardButton.disabled = locked;
-	abortButton.disabled = locked || !state.busy;
+	abortButton.disabled = locked || !activeBusy;
 	reportButton.disabled = locked || !state.cwd || state.busy;
 	chatInput.disabled = locked || !state.cwd;
 	modelSelect.disabled = locked || !state.cwd || state.busy || state.models.length === 0;
@@ -274,15 +293,46 @@ function renderStatus(): void {
 	]) {
 		button.disabled = locked;
 	}
-	sendButton.disabled = locked || !state.cwd || state.busy;
-	steerButton.disabled = locked || !state.cwd || !state.busy;
-	queueNextButton.disabled = locked || !state.cwd || !state.busy;
-	composer.classList.toggle("busy", state.busy);
+	sendButton.disabled = locked || !state.cwd || activeBusy;
+	steerButton.disabled = locked || !state.cwd || !activeBusy;
+	queueNextButton.disabled = locked || !state.cwd || !activeBusy;
+	composer.classList.toggle("busy", activeBusy);
 }
 
 function renderChatDock(): void {
 	chatDock.classList.toggle("right", state.chatDockPosition === "right");
 	dockToggleButton.textContent = state.chatDockPosition === "right" ? "Bottom" : "Right";
+}
+
+function renderChatTabs(): void {
+	chatTabs.replaceChildren();
+	chatTabs.classList.toggle("open", state.taskOrder.length > 0);
+	if (state.taskOrder.length === 0) {
+		return;
+	}
+
+	chatTabs.appendChild(createChatTab("Main", undefined, !state.activeTaskId, state.busy ? "working" : "complete"));
+	for (const taskId of state.taskOrder) {
+		const task = state.tasks.get(taskId);
+		if (!task) {
+			continue;
+		}
+		chatTabs.appendChild(createChatTab(task.title, task.id, state.activeTaskId === task.id, task.status));
+	}
+}
+
+function createChatTab(label: string, taskId: string | undefined, active: boolean, status: string): HTMLButtonElement {
+	const button = document.createElement("button");
+	button.type = "button";
+	button.className = ["chat-tab", active ? "active" : "", `status-${status}`].filter(Boolean).join(" ");
+	button.textContent = label;
+	button.title = label;
+	if (taskId) {
+		button.dataset.taskId = taskId;
+	} else {
+		button.dataset.mainTab = "true";
+	}
+	return button;
 }
 
 function renderRecentWorkspaces(): void {
@@ -325,17 +375,20 @@ function renderModels(): void {
 function renderChat(): void {
 	const stickToBottom = shouldStickChatToBottom(chatLog);
 	chatLog.replaceChildren();
-	const messages = state.streaming
+	const activeTask = activeTaskView();
+	const baseMessages = activeTask?.messages ?? state.messages;
+	const streaming = activeTask?.streaming ?? state.streaming;
+	const messages = streaming
 		? [
-				...state.messages,
+				...baseMessages,
 				{
-					id: `stream-${state.streaming.id}`,
+					id: `stream-${streaming.id}`,
 					author: "Pi" as const,
-					text: state.streaming.text,
+					text: streaming.text,
 					timestamp: new Date().toISOString(),
 				},
 			]
-		: state.messages;
+		: baseMessages;
 
 	for (const message of messages.slice(-10)) {
 		const row = document.createElement("div");
@@ -352,19 +405,24 @@ function renderChat(): void {
 }
 
 function renderAgentLoading(): void {
-	agentLoading.classList.toggle("open", state.busy);
-	agentLoadingText.textContent = state.statusText;
+	const activeTask = activeTaskView();
+	const activeBusy = activeTask ? isTaskBusy(activeTask) : state.busy;
+	agentLoading.classList.toggle("open", activeBusy);
+	agentLoadingText.textContent = activeTask ? activeTask.statusText : state.statusText;
 }
 
 function renderQueue(): void {
 	queueStack.replaceChildren();
-	for (const item of state.queuedSteering) {
+	const activeTask = activeTaskView();
+	const queuedSteering = activeTask?.queuedSteering ?? state.queuedSteering;
+	const queuedFollowUp = activeTask?.queuedFollowUp ?? state.queuedFollowUp;
+	for (const item of queuedSteering) {
 		queueStack.appendChild(createQueuedMessage("Steering", item));
 	}
-	for (const item of state.queuedFollowUp) {
+	for (const item of queuedFollowUp) {
 		queueStack.appendChild(createQueuedMessage("Queued next", item));
 	}
-	queueStack.classList.toggle("open", state.queuedSteering.length + state.queuedFollowUp.length > 0);
+	queueStack.classList.toggle("open", queuedSteering.length + queuedFollowUp.length > 0);
 }
 
 function createQueuedMessage(label: string, text: string): HTMLElement {
@@ -916,6 +974,12 @@ function applySessionSnapshot(snapshot: SessionSnapshot): void {
 	state.model = snapshot.model;
 	state.models = snapshot.models;
 	state.cards = snapshot.board?.cards ?? [];
+	state.tasks.clear();
+	state.taskOrder = [];
+	state.activeTaskId = undefined;
+	for (const card of state.cards) {
+		ensureTaskFromCard(card);
+	}
 	state.shareReady = snapshot.board?.shareReady ?? false;
 	state.queuedSteering = [];
 	state.queuedFollowUp = [];
@@ -939,6 +1003,9 @@ function applyAuthState(authState: AuthState): void {
 		state.cards = [];
 		state.queuedSteering = [];
 		state.queuedFollowUp = [];
+		state.tasks.clear();
+		state.taskOrder = [];
+		state.activeTaskId = undefined;
 		resetCanvasViewport();
 		state.selectedIds.clear();
 		state.loadingCardIds.clear();
@@ -1002,6 +1069,22 @@ async function applyPendingModelSelection(): Promise<void> {
 async function submitPrompt(text: string, streamingBehavior?: "steer" | "followUp"): Promise<void> {
 	const trimmed = text.trim();
 	if (!trimmed || !state.cwd || !state.authenticated) return;
+	const activeTask = activeTaskView();
+	if (activeTask) {
+		const behavior = isTaskBusy(activeTask) ? streamingBehavior ?? "followUp" : streamingBehavior;
+		try {
+			await api.sendTaskPrompt({
+				taskId: activeTask.id,
+				text: trimmed,
+				streamingBehavior: behavior,
+			});
+			chatInput.value = "";
+		} catch (error) {
+			addTaskSystemMessage(activeTask.id, errorMessage(error));
+			showToast(errorMessage(error));
+		}
+		return;
+	}
 	const selected = selectedCards();
 	const queueing = state.busy;
 	if (!queueing) {
@@ -1038,18 +1121,41 @@ function handleRendererEvent(event: MainToRendererEvent): void {
 		return;
 	}
 	if (event.type === "chat-message") {
-		addChatEvent(event);
+		if (event.taskId) {
+			addTaskChatEvent(event.taskId, event);
+		} else {
+			addChatEvent(event);
+		}
 		return;
 	}
 	if (event.type === "assistant-stream") {
-		state.streaming = { id: event.id, text: event.text };
+		if (event.taskId) {
+			const task = state.tasks.get(event.taskId);
+			if (task) {
+				task.streaming = { id: event.id, text: event.text };
+			}
+		} else {
+			state.streaming = { id: event.id, text: event.text };
+		}
 		renderChat();
 		return;
 	}
 	if (event.type === "queue-update") {
-		state.queuedSteering = [...event.steering];
-		state.queuedFollowUp = [...event.followUp];
+		if (event.taskId) {
+			const task = state.tasks.get(event.taskId);
+			if (task) {
+				task.queuedSteering = [...event.steering];
+				task.queuedFollowUp = [...event.followUp];
+			}
+		} else {
+			state.queuedSteering = [...event.steering];
+			state.queuedFollowUp = [...event.followUp];
+		}
 		renderQueue();
+		return;
+	}
+	if (event.type === "task-update") {
+		upsertTask(event.task);
 		return;
 	}
 	if (event.type === "canvas-card") {
@@ -1083,6 +1189,23 @@ function addChatEvent(event: ChatMessageEvent): void {
 	renderChat();
 }
 
+function addTaskChatEvent(taskId: string, event: ChatMessageEvent): void {
+	const task = state.tasks.get(taskId);
+	if (!task) {
+		return;
+	}
+	if (event.author === "Pi") {
+		task.streaming = undefined;
+	}
+	task.messages.push({
+		id: event.id,
+		author: event.author,
+		text: event.text,
+		timestamp: event.timestamp,
+	});
+	renderChat();
+}
+
 function addSystemMessage(text: string): void {
 	state.messages.push({
 		id: `system-${Date.now()}`,
@@ -1093,6 +1216,86 @@ function addSystemMessage(text: string): void {
 	renderChat();
 }
 
+function addTaskSystemMessage(taskId: string, text: string): void {
+	const task = state.tasks.get(taskId);
+	if (!task) {
+		addSystemMessage(text);
+		return;
+	}
+	task.messages.push({
+		id: `task-system-${taskId}-${Date.now()}`,
+		author: "System",
+		text,
+		timestamp: new Date().toISOString(),
+	});
+	renderChat();
+}
+
+function upsertTask(snapshot: TaskSnapshot): void {
+	const existing = state.tasks.get(snapshot.id);
+	if (existing) {
+		existing.groupId = snapshot.groupId;
+		existing.sessionId = snapshot.sessionId;
+		existing.cardId = snapshot.cardId;
+		existing.title = snapshot.title;
+		existing.status = snapshot.status;
+		existing.statusText = snapshot.statusText;
+		existing.targetPaths = [...snapshot.targetPaths];
+		existing.requiresWrites = snapshot.requiresWrites;
+		if (snapshot.status === "complete" || snapshot.status === "error") {
+			existing.streaming = undefined;
+			existing.queuedSteering = [];
+			existing.queuedFollowUp = [];
+		}
+	} else {
+		state.tasks.set(snapshot.id, {
+			...snapshot,
+			targetPaths: [...snapshot.targetPaths],
+			messages: [taskSystemMessage(snapshot, `Task started: ${snapshot.title}`)],
+			queuedSteering: [],
+			queuedFollowUp: [],
+		});
+		state.taskOrder.push(snapshot.id);
+	}
+	renderChatTabs();
+	renderStatus();
+	renderChat();
+	renderQueue();
+}
+
+function ensureTaskFromCard(card: CanvasCard): void {
+	if (!card.taskId || state.tasks.has(card.taskId)) {
+		return;
+	}
+	const snapshot: TaskSnapshot = {
+		id: card.taskId,
+		groupId: card.taskGroupId ?? "restored-task-group",
+		sessionId: card.taskSessionId ?? "restored-task-session",
+		cardId: card.id,
+		title: card.title,
+		status: card.status === "working" ? "working" : card.status === "error" ? "error" : "complete",
+		statusText: card.statusLabel,
+		targetPaths: [],
+		requiresWrites: false,
+	};
+	state.tasks.set(snapshot.id, {
+		...snapshot,
+		messages: [taskSystemMessage(snapshot, `Task card: ${snapshot.title}`)],
+		queuedSteering: [],
+		queuedFollowUp: [],
+	});
+	state.taskOrder.push(snapshot.id);
+}
+
+function taskSystemMessage(task: TaskSnapshot, text: string): ChatMessage {
+	return {
+		id: `task-system-${task.id}-${Date.now()}`,
+		author: "System",
+		text,
+		timestamp: new Date().toISOString(),
+	};
+}
+
 function upsertCard(card: CanvasCard): void {
 	const index = state.cards.findIndex((candidate) => candidate.id === card.id);
 	if (index === -1) {
@@ -1101,8 +1304,17 @@ function upsertCard(card: CanvasCard): void {
 			position: resolveNewCardPosition(card.position, state.cards),
 		});
 	} else {
-		state.cards[index] = card;
+		const existing = state.cards[index];
+		state.cards[index] = {
+			...card,
+			position: {
+				...card.position,
+				x: existing.position.x,
+				y: existing.position.y,
+			},
+		};
 	}
+	ensureTaskFromCard(card);
 	state.loadingCardIds.delete(card.id);
 	render();
 	scheduleSaveBoard();
@@ -1195,6 +1407,17 @@ function positionsOverlap(a: CanvasCardPosition, b: CanvasCardPosition, gap: num
 
 function rangesOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
 	return aStart < bEnd && aEnd > bStart;
+}
+
+function activeTaskView(): TaskView | undefined {
+	if (!state.activeTaskId) {
+		return undefined;
+	}
+	return state.tasks.get(state.activeTaskId);
+}
+
+function isTaskBusy(task: TaskView): boolean {
+	return task.status === "queued" || task.status === "working";
 }
 
 function selectedCards(): CanvasCard[] {
@@ -1373,9 +1596,13 @@ function deleteSelected(): void {
 
 function deleteCard(id: string): void {
 	if (!state.authenticated) return;
+	const deleted = state.cards.find((card) => card.id === id);
 	state.cards = state.cards.filter((card) => card.id !== id);
 	state.selectedIds.delete(id);
 	state.loadingCardIds.delete(id);
+	if (deleted?.taskId === state.activeTaskId) {
+		state.activeTaskId = undefined;
+	}
 	render();
 	scheduleSaveBoard();
 	showToast("Canvas item closed.");
@@ -1431,6 +1658,7 @@ async function saveBoard(): Promise<void> {
 function setBusy(text: string, busy: boolean): void {
 	state.statusText = text;
 	state.busy = busy;
+	renderChatTabs();
 	renderStatus();
 	renderChat();
 }
@@ -1487,6 +1715,11 @@ cardHost.addEventListener("click", (event) => {
 		deleteCard(cardElement.dataset.id);
 		return;
 	}
+	const card = state.cards.find((candidate) => candidate.id === cardElement.dataset.id);
+	if (card?.taskId) {
+		ensureTaskFromCard(card);
+		state.activeTaskId = card.taskId;
+	}
 	toggleSelection(cardElement.dataset.id, event.shiftKey || event.metaKey || event.ctrlKey);
 });
 cardHost.addEventListener("pointerdown", beginCardDrag);
@@ -1501,7 +1734,9 @@ canvasShell.addEventListener("wheel", zoomCanvas, { passive: false });
 
 composer.addEventListener("submit", (event) => {
 	event.preventDefault();
-	void submitPrompt(chatInput.value, state.busy ? "followUp" : undefined);
+	const activeTask = activeTaskView();
+	const activeBusy = activeTask ? isTaskBusy(activeTask) : state.busy;
+	void submitPrompt(chatInput.value, activeBusy ? "followUp" : undefined);
 });
 
 steerButton.addEventListener("click", () => {
@@ -1514,6 +1749,19 @@ queueNextButton.addEventListener("click", () => {
 
 dockToggleButton.addEventListener("click", () => {
 	setChatDockPosition(state.chatDockPosition === "right" ? "bottom" : "right");
+});
+
+chatTabs.addEventListener("click", (event) => {
+	const target = event.target;
+	if (!(target instanceof HTMLElement)) return;
+	const tab = target.closest<HTMLButtonElement>(".chat-tab");
+	if (!tab) return;
+	state.activeTaskId = tab.dataset.taskId;
+	renderStatus();
+	renderChatTabs();
+	renderChat();
+	renderQueue();
+	chatInput.focus();
 });
 
 openFolderButton.addEventListener("click", () => {
@@ -1545,6 +1793,7 @@ newBoardButton.addEventListener("click", () => {
 	state.cards = [];
 	state.selectedIds.clear();
 	state.loadingCardIds.clear();
+	state.activeTaskId = undefined;
 	state.shareReady = false;
 	resetCanvasViewport();
 	render();
@@ -1557,6 +1806,11 @@ reportButton.addEventListener("click", () => {
 });
 
 abortButton.addEventListener("click", () => {
+	const activeTask = activeTaskView();
+	if (activeTask && isTaskBusy(activeTask)) {
+		void api.abortTask(activeTask.id);
+		return;
+	}
 	void api.abortPrompt();
 });
 
