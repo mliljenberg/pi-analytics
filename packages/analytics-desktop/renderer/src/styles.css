@@ -1147,6 +1147,23 @@ input:disabled {
 	display: grid;
 }
 
+.modal:fullscreen {
+	width: 100vw;
+	height: 100vh;
+	padding: 0;
+	background: #fafbfc;
+	backdrop-filter: none;
+}
+
+.modal:fullscreen .focus-view {
+	width: 100vw;
+	height: 100vh;
+	max-height: none;
+	border: 0;
+	border-radius: 0;
+	box-shadow: none;
+}
+
 .login-modal {
 	position: fixed;
 	inset: 0;

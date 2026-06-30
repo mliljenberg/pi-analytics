@@ -1625,7 +1625,7 @@ function deleteCard(id: string): void {
 	showToast("Canvas item closed.");
 }
 
-function openCard(id: string): void {
+async function openCard(id: string): Promise<void> {
 	if (!state.authenticated) return;
 	const card = state.cards.find((candidate) => candidate.id === id);
 	if (!card) return;
@@ -1634,6 +1634,19 @@ function openCard(id: string): void {
 	modalSubtitle.textContent = card.subtitle;
 	modalBody.replaceChildren(createCardElement(card, false));
 	modal.classList.add("open");
+	try {
+		await modal.requestFullscreen();
+	} catch (error) {
+		showToast(errorMessage(error));
+	}
+}
+
+async function closeCardFullscreen(): Promise<void> {
+	if (document.fullscreenElement === modal) {
+		await document.exitFullscreen();
+	}
+	modal.classList.remove("open");
+	state.activeModalId = undefined;
 }
 
 async function exportCards(cards: CanvasCard[]): Promise<void> {
@@ -1720,7 +1733,7 @@ cardHost.addEventListener("click", (event) => {
 	const cardElement = target.closest<HTMLElement>(".canvas-card");
 	if (!cardElement?.dataset.id) return;
 	if (action?.dataset.action === "open") {
-		openCard(cardElement.dataset.id);
+		void openCard(cardElement.dataset.id);
 		return;
 	}
 	if (action?.dataset.action === "export") {
@@ -1840,7 +1853,7 @@ keepSelectedButton.addEventListener("click", keepSelected);
 deleteSelectedButton.addEventListener("click", deleteSelected);
 openSelectedButton.addEventListener("click", () => {
 	const first = selectedCards()[0];
-	if (first) openCard(first.id);
+	if (first) void openCard(first.id);
 });
 exportSelectedButton.addEventListener("click", () => {
 	void exportCards(selectedCards());
@@ -1862,19 +1875,28 @@ modalExportButton.addEventListener("click", () => {
 	if (card) void exportCards([card]);
 });
 
-modalCloseButton.addEventListener("click", () => modal.classList.remove("open"));
+modalCloseButton.addEventListener("click", () => {
+	void closeCardFullscreen();
+});
 modal.addEventListener("click", (event) => {
-	if (event.target === modal) modal.classList.remove("open");
+	if (event.target === modal) void closeCardFullscreen();
 });
 
 document.addEventListener("keydown", (event) => {
 	if (event.key === "Escape") {
-		modal.classList.remove("open");
+		void closeCardFullscreen();
 		state.selectedIds.clear();
 		render();
 	}
 	if ((event.key === "Delete" || event.key === "Backspace") && state.selectedIds.size > 0 && document.activeElement !== chatInput) {
 		deleteSelected();
+	}
+});
+
+document.addEventListener("fullscreenchange", () => {
+	if (!document.fullscreenElement && modal.classList.contains("open")) {
+		modal.classList.remove("open");
+		state.activeModalId = undefined;
 	}
 });
 
