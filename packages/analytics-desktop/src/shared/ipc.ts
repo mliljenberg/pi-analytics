@@ -1,6 +1,8 @@
 import type { CanvasCard, PersistedBoard, PromptCardContext } from "./canvas.ts";
 
 export const IPC = {
+	getAuthState: "analytics:get-auth-state",
+	loginProvider: "analytics:login-provider",
 	selectWorkspaceFolder: "analytics:select-workspace-folder",
 	startSession: "analytics:start-session",
 	sendPrompt: "analytics:send-prompt",
@@ -25,6 +27,25 @@ export interface ModelSummary {
 	configured: boolean;
 	contextWindow: number;
 	reasoning: boolean;
+}
+
+export interface ProviderSummary {
+	id: string;
+	name: string;
+	authType: "api_key" | "oauth";
+	configured: boolean;
+	modelCount: number;
+}
+
+export interface AuthState {
+	loggedIn: boolean;
+	providers: ProviderSummary[];
+	models: ModelSummary[];
+}
+
+export interface LoginProviderRequest {
+	provider: string;
+	apiKey?: string;
 }
 
 export interface WorkspaceFolder {
@@ -68,6 +89,7 @@ export interface ChatMessageEvent {
 
 export type MainToRendererEvent =
 	| { type: "status"; text: string; busy: boolean }
+	| { type: "login-status"; message: string }
 	| { type: "diagnostic"; diagnostic: AppDiagnostic }
 	| { type: "assistant-stream"; id: string; text: string }
 	| { type: "analysis-card"; card: CanvasCard }
@@ -78,6 +100,8 @@ export type MainToRendererEvent =
 	| ChatMessageEvent;
 
 export interface AnalyticsDesktopApi {
+	getAuthState(): Promise<AuthState>;
+	loginProvider(request: LoginProviderRequest): Promise<AuthState>;
 	selectWorkspaceFolder(): Promise<WorkspaceFolder | undefined>;
 	startSession(cwd: string): Promise<SessionSnapshot>;
 	sendPrompt(request: SendPromptRequest): Promise<void>;

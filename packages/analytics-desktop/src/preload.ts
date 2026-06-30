@@ -1,8 +1,10 @@
 import { contextBridge, type IpcRendererEvent, ipcRenderer } from "electron";
 import {
 	type AnalyticsDesktopApi,
+	type AuthState,
 	type ExportReportRequest,
 	IPC,
+	type LoginProviderRequest,
 	type MainToRendererEvent,
 	type ModelSummary,
 	type SaveBoardRequest,
@@ -13,6 +15,9 @@ import {
 } from "./shared/ipc.ts";
 
 const api: AnalyticsDesktopApi = {
+	getAuthState: async () => ipcRenderer.invoke(IPC.getAuthState) as Promise<AuthState>,
+	loginProvider: async (request: LoginProviderRequest) =>
+		ipcRenderer.invoke(IPC.loginProvider, request) as Promise<AuthState>,
 	selectWorkspaceFolder: async () =>
 		ipcRenderer.invoke(IPC.selectWorkspaceFolder) as Promise<WorkspaceFolder | undefined>,
 	startSession: async (cwd: string) => ipcRenderer.invoke(IPC.startSession, cwd) as Promise<SessionSnapshot>,

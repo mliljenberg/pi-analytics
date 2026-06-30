@@ -55,6 +55,14 @@ button {
 	grid-template-rows: 56px minmax(0, 1fr);
 }
 
+.app[inert] {
+	filter: saturate(0.75);
+}
+
+.hidden {
+	display: none !important;
+}
+
 .topbar {
 	display: flex;
 	align-items: center;
@@ -699,6 +707,85 @@ input:disabled {
 
 .modal.open {
 	display: grid;
+}
+
+.login-modal {
+	position: fixed;
+	inset: 0;
+	z-index: 100;
+	display: none;
+	place-items: center;
+	padding: 22px;
+	background: rgba(16, 17, 20, 0.5);
+	backdrop-filter: blur(20px);
+}
+
+.login-modal.open {
+	display: grid;
+}
+
+.login-panel {
+	width: min(420px, 100%);
+	display: grid;
+	gap: 10px;
+	border: 1px solid rgba(255, 255, 255, 0.42);
+	border-radius: 8px;
+	background: #fff;
+	box-shadow: var(--shadow-lg);
+	padding: 24px;
+}
+
+.login-head {
+	margin-bottom: 8px;
+}
+
+.login-head h1 {
+	margin: 0;
+	font-size: 24px;
+	line-height: 1.2;
+}
+
+.login-head p {
+	margin: 6px 0 0;
+	color: var(--muted);
+	font-size: 13px;
+	line-height: 1.4;
+}
+
+.field-label {
+	color: #444a55;
+	font-size: 12px;
+	font-weight: 650;
+}
+
+.field-control {
+	width: 100%;
+	min-height: 40px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: rgba(246, 247, 250, 0.92);
+	color: var(--ink);
+	padding: 0 11px;
+	outline: none;
+}
+
+.field-control:focus {
+	border-color: rgba(40, 110, 240, 0.32);
+	background: #fff;
+	box-shadow: 0 0 0 4px rgba(40, 110, 240, 0.1);
+}
+
+.login-error {
+	min-height: 18px;
+	margin: 2px 0 0;
+	color: #9b2b1c;
+	font-size: 12px;
+	line-height: 1.4;
+}
+
+.login-submit {
+	width: 100%;
+	margin-top: 4px;
 }
 
 .focus-view {

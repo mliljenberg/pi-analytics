@@ -1,5 +1,12 @@
 import type { CanvasCard, CanvasCardPosition, PersistedBoard, PromptCardContext } from "../../src/shared/canvas.ts";
-import type { ChatMessageEvent, MainToRendererEvent, ModelSummary, SessionSnapshot } from "../../src/shared/ipc.ts";
+import type {
+	AuthState,
+	ChatMessageEvent,
+	MainToRendererEvent,
+	ModelSummary,
+	ProviderSummary,
+	SessionSnapshot,
+} from "../../src/shared/ipc.ts";
 import "./styles.css";
 
 interface ChatMessage {
@@ -15,6 +22,9 @@ interface StreamingMessage {
 }
 
 interface AppState {
+	authenticated: boolean;
+	authProviders: ProviderSummary[];
+	pendingModelValue?: string;
 	cwd?: string;
 	sessionId?: string;
 	model?: ModelSummary;
@@ -32,6 +42,8 @@ interface AppState {
 }
 
 const state: AppState = {
+	authenticated: false,
+	authProviders: [],
 	models: [],
 	cards: [],
 	messages: [
@@ -51,6 +63,16 @@ const state: AppState = {
 };
 
 const api = window.piAnalytics;
+const appRoot = requireElement<HTMLDivElement>("appRoot");
+const loginModal = requireElement<HTMLDivElement>("loginModal");
+const loginForm = requireElement<HTMLFormElement>("loginForm");
+const loginProvider = requireElement<HTMLSelectElement>("loginProvider");
+const loginApiKeyLabel = requireElement<HTMLLabelElement>("loginApiKeyLabel");
+const loginApiKey = requireElement<HTMLInputElement>("loginApiKey");
+const loginModelLabel = requireElement<HTMLLabelElement>("loginModelLabel");
+const loginModel = requireElement<HTMLSelectElement>("loginModel");
+const loginError = requireElement<HTMLParagraphElement>("loginError");
+const loginSubmitButton = requireElement<HTMLButtonElement>("loginSubmitButton");
 const topStatus = requireElement<HTMLElement>("topStatus");
 const modelSelect = requireElement<HTMLSelectElement>("modelSelect");
 const openFolderButton = requireElement<HTMLButtonElement>("openFolderButton");
@@ -94,6 +116,7 @@ function requireElement<T extends HTMLElement>(id: string): T {
 }
 
 function render(): void {
+	renderAuth();
 	renderStatus();
 	renderModels();
 	renderChat();
@@ -102,16 +125,80 @@ function render(): void {
 	scheduleCanvasPaint();
 }
 
+function renderAuth(): void {
+	loginModal.classList.toggle("open", !state.authenticated);
+	if (state.authenticated) {
+		appRoot.removeAttribute("inert");
+	} else {
+		appRoot.setAttribute("inert", "");
+	}
+
+	const selectedProvider = loginProvider.value;
+	loginProvider.replaceChildren();
+	for (const provider of state.authProviders) {
+		const option = document.createElement("option");
+		option.value = provider.id;
+		const method = provider.authType === "oauth" ? "subscription" : "API key";
+		option.textContent = `${provider.name} - ${method}${provider.configured ? " (configured)" : ""}`;
+		loginProvider.appendChild(option);
+	}
+	if (selectedProvider) {
+		loginProvider.value = selectedProvider;
+	}
+	const provider = state.authProviders.find((candidate) => candidate.id === loginProvider.value);
+	const apiKeyVisible = provider?.authType !== "oauth";
+	loginApiKeyLabel.classList.toggle("hidden", !apiKeyVisible);
+	loginApiKey.classList.toggle("hidden", !apiKeyVisible);
+	loginApiKey.required = apiKeyVisible;
+	loginSubmitButton.textContent = provider?.authType === "oauth" ? "Continue login" : "Login";
+
+	const selectedModel = loginModel.value || state.pendingModelValue || "";
+	const configuredModels = state.models.filter((model) => model.configured);
+	loginModel.replaceChildren();
+	for (const model of configuredModels) {
+		const option = document.createElement("option");
+		option.value = modelValue(model);
+		option.textContent = `${model.providerName}: ${model.name}`;
+		loginModel.appendChild(option);
+	}
+	if (selectedModel) {
+		loginModel.value = selectedModel;
+	}
+	const modelVisible = configuredModels.length > 0;
+	loginModelLabel.classList.toggle("hidden", !modelVisible);
+	loginModel.classList.toggle("hidden", !modelVisible);
+	loginSubmitButton.disabled = state.authProviders.length === 0;
+}
+
 function renderStatus(): void {
 	const cardCount = state.cards.length;
 	const keptCount = state.cards.filter((card) => card.kept).length;
 	const workspace = state.cwd ? compactPath(state.cwd) : "No workspace";
 	const canvasStatus = cardCount === 0 ? "empty canvas" : keptCount > 0 ? `${cardCount} items, ${keptCount} kept` : `${cardCount} items`;
-	topStatus.textContent = state.busy ? `${workspace} - ${state.statusText}` : `${workspace} - ${canvasStatus}`;
-	abortButton.disabled = !state.busy;
-	reportButton.disabled = !state.cwd || state.busy;
-	chatInput.disabled = !state.cwd || state.busy;
-	modelSelect.disabled = !state.cwd || state.busy || state.models.length === 0;
+	topStatus.textContent = !state.authenticated
+		? "Login required"
+		: state.busy
+			? `${workspace} - ${state.statusText}`
+			: `${workspace} - ${canvasStatus}`;
+	const locked = !state.authenticated;
+	openFolderButton.disabled = locked;
+	newBoardButton.disabled = locked;
+	abortButton.disabled = locked || !state.busy;
+	reportButton.disabled = locked || !state.cwd || state.busy;
+	chatInput.disabled = locked || !state.cwd || state.busy;
+	modelSelect.disabled = locked || !state.cwd || state.busy || state.models.length === 0;
+	for (const button of document.querySelectorAll<HTMLButtonElement>("[data-prompt]")) {
+		button.disabled = locked || !state.cwd || state.busy;
+	}
+	for (const button of [
+		askSelectedButton,
+		keepSelectedButton,
+		openSelectedButton,
+		exportSelectedButton,
+		deleteSelectedButton,
+	]) {
+		button.disabled = locked;
+	}
 }
 
 function renderModels(): void {
@@ -437,16 +524,19 @@ function drawGrid(ctx: CanvasRenderingContext2D, width: number, height: number):
 }
 
 async function openWorkspace(): Promise<void> {
+	if (!state.authenticated) return;
 	const folder = await api.selectWorkspaceFolder();
 	if (!folder) return;
 	await startSession(folder.path);
 }
 
 async function startSession(cwd: string): Promise<void> {
+	if (!state.authenticated) return;
 	setBusy("Starting session", true);
 	try {
 		const snapshot = await api.startSession(cwd);
 		applySessionSnapshot(snapshot);
+		await applyPendingModelSelection();
 		showToast("Workspace opened.");
 	} catch (error) {
 		addSystemMessage(errorMessage(error));
@@ -457,6 +547,7 @@ async function startSession(cwd: string): Promise<void> {
 }
 
 function applySessionSnapshot(snapshot: SessionSnapshot): void {
+	state.authenticated = true;
 	state.cwd = snapshot.cwd;
 	state.sessionId = snapshot.sessionId;
 	state.model = snapshot.model;
@@ -470,9 +561,63 @@ function applySessionSnapshot(snapshot: SessionSnapshot): void {
 	render();
 }
 
+function applyAuthState(authState: AuthState): void {
+	state.authenticated = authState.loggedIn;
+	state.authProviders = authState.providers;
+	state.models = authState.models;
+	if (!authState.loggedIn) {
+		state.cwd = undefined;
+		state.sessionId = undefined;
+		state.model = undefined;
+		state.cards = [];
+		state.selectedIds.clear();
+	}
+	render();
+}
+
+async function refreshAuthState(): Promise<void> {
+	try {
+		applyAuthState(await api.getAuthState());
+	} catch (error) {
+		loginError.textContent = errorMessage(error);
+		render();
+	}
+}
+
+async function saveLogin(): Promise<void> {
+	loginError.textContent = "";
+	loginSubmitButton.disabled = true;
+	try {
+		const authState = await api.loginProvider({
+			provider: loginProvider.value,
+			apiKey: loginApiKey.value,
+		});
+		state.pendingModelValue = loginModel.value || undefined;
+		loginApiKey.value = "";
+		applyAuthState(authState);
+		showToast("Logged in.");
+	} catch (error) {
+		loginError.textContent = errorMessage(error);
+	} finally {
+		loginSubmitButton.disabled = state.authProviders.length === 0;
+	}
+}
+
+async function applyPendingModelSelection(): Promise<void> {
+	if (!state.pendingModelValue || !state.cwd) return;
+	const [provider, ...idParts] = state.pendingModelValue.split("/");
+	const id = idParts.join("/");
+	if (!provider || !id) return;
+	try {
+		await api.setModel({ provider, id });
+	} catch (error) {
+		addSystemMessage(errorMessage(error));
+	}
+}
+
 async function submitPrompt(text: string): Promise<void> {
 	const trimmed = text.trim();
-	if (!trimmed || !state.cwd) return;
+	if (!trimmed || !state.cwd || !state.authenticated) return;
 	setBusy("Sending prompt", true);
 	try {
 		await api.sendPrompt({
@@ -491,6 +636,10 @@ async function submitPrompt(text: string): Promise<void> {
 function handleRendererEvent(event: MainToRendererEvent): void {
 	if (event.type === "status") {
 		setBusy(event.text, event.busy);
+		return;
+	}
+	if (event.type === "login-status") {
+		loginError.textContent = event.message;
 		return;
 	}
 	if (event.type === "chat-message") {
@@ -594,6 +743,7 @@ function toggleSelection(id: string, additive: boolean): void {
 }
 
 function keepSelected(): void {
+	if (!state.authenticated) return;
 	for (const card of selectedCards()) {
 		card.kept = true;
 		card.status = "kept";
@@ -605,6 +755,7 @@ function keepSelected(): void {
 }
 
 function deleteSelected(): void {
+	if (!state.authenticated) return;
 	if (state.selectedIds.size === 0) return;
 	state.cards = state.cards.filter((card) => !state.selectedIds.has(card.id));
 	state.selectedIds.clear();
@@ -614,6 +765,7 @@ function deleteSelected(): void {
 }
 
 function openCard(id: string): void {
+	if (!state.authenticated) return;
 	const card = state.cards.find((candidate) => candidate.id === id);
 	if (!card) return;
 	state.activeModalId = id;
@@ -624,6 +776,7 @@ function openCard(id: string): void {
 }
 
 async function exportCards(cards: CanvasCard[]): Promise<void> {
+	if (!state.authenticated) return;
 	if (cards.length === 0) return;
 	try {
 		const filePath = await api.exportReport({ cards });
@@ -645,6 +798,7 @@ function scheduleSaveBoard(): void {
 }
 
 async function saveBoard(): Promise<void> {
+	if (!state.authenticated) return;
 	if (!state.cwd || !state.sessionId) return;
 	const board: PersistedBoard = {
 		version: 1,
@@ -718,6 +872,20 @@ document.querySelectorAll<HTMLButtonElement>("[data-prompt]").forEach((button) =
 
 openFolderButton.addEventListener("click", () => {
 	void openWorkspace();
+});
+
+loginForm.addEventListener("submit", (event) => {
+	event.preventDefault();
+	void saveLogin();
+});
+
+loginProvider.addEventListener("change", () => {
+	loginError.textContent = "";
+	renderAuth();
+});
+
+loginModel.addEventListener("change", () => {
+	state.pendingModelValue = loginModel.value || undefined;
 });
 
 newBoardButton.addEventListener("click", () => {
@@ -797,4 +965,4 @@ const resizeObserver = new ResizeObserver(() => scheduleCanvasPaint());
 resizeObserver.observe(canvasShell);
 workspaceCanvas.addEventListener("paint", () => scheduleCanvasPaint());
 api.onEvent(handleRendererEvent);
-render();
+await refreshAuthState();

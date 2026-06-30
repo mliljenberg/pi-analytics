@@ -1,17 +1,26 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { getProviders } from "@earendil-works/pi-ai/compat";
+import type { OAuthProviderId } from "@earendil-works/pi-ai/oauth";
 import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent/core/agent-session";
 import {
 	type AgentSessionServices,
 	createAgentSessionFromServices,
 	createAgentSessionServices,
 } from "@earendil-works/pi-coding-agent/core/agent-session-services";
+import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
+import { ModelRegistry } from "@earendil-works/pi-coding-agent/core/model-registry";
+import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "@earendil-works/pi-coding-agent/core/provider-display-names";
 import { SessionManager } from "@earendil-works/pi-coding-agent/core/session-manager";
 import type { CanvasCardPosition, PromptCardContext } from "../shared/canvas.ts";
 import { normalizeSessionEvent } from "../shared/card-events.ts";
-import type { AppDiagnostic, MainToRendererEvent, ModelSummary, SessionSnapshot } from "../shared/ipc.ts";
+import type { AppDiagnostic, AuthState, MainToRendererEvent, ModelSummary, SessionSnapshot } from "../shared/ipc.ts";
 import type { BoardStore } from "./board-store.ts";
 
 type EmitEvent = (event: MainToRendererEvent) => void;
+type OpenExternal = (url: string) => Promise<void>;
+type LoginAuthType = "api_key" | "oauth";
+
+const BUILT_IN_MODEL_PROVIDERS = new Set<string>(getProviders());
 
 const POSITION_PRESETS: CanvasCardPosition[] = [
 	{ x: 72, y: 70, w: 340, h: 256 },
@@ -29,6 +38,8 @@ export class AgentController {
 	private readonly boardStore: BoardStore;
 	private readonly emit: EmitEvent;
 	private services: AgentSessionServices | undefined;
+	private authStorage: AuthStorage | undefined;
+	private modelRegistry: ModelRegistry | undefined;
 	private session: AgentSession | undefined;
 	private unsubscribe: (() => void) | undefined;
 	private nextPositionIndex = 0;
@@ -38,7 +49,68 @@ export class AgentController {
 		this.emit = emit;
 	}
 
+	getAuthState(): AuthState {
+		const registry = this.getModelRegistry();
+		const models = registry.getAll().map((model) => this.modelToSummary(model, registry));
+		const authStorage = this.getAuthStorage();
+		const oauthProviderIds = new Set(authStorage.getOAuthProviders().map((provider) => provider.id));
+		const providerMap = new Map<
+			string,
+			{ id: string; name: string; authType: LoginAuthType; configured: boolean; modelCount: number }
+		>();
+		for (const provider of authStorage.getOAuthProviders()) {
+			providerMap.set(provider.id, {
+				id: provider.id,
+				name: provider.name,
+				authType: "oauth",
+				configured: this.getModelRegistry().getProviderAuthStatus(provider.id).configured,
+				modelCount: 0,
+			});
+		}
+		for (const model of models) {
+			const current = providerMap.get(model.provider);
+			if (current) {
+				current.modelCount += 1;
+				current.configured ||= model.configured;
+				continue;
+			}
+			providerMap.set(model.provider, {
+				id: model.provider,
+				name: model.providerName,
+				authType: isApiKeyLoginProvider(model.provider, oauthProviderIds) ? "api_key" : "oauth",
+				configured: model.configured,
+				modelCount: 1,
+			});
+		}
+		return {
+			loggedIn: models.some((model) => model.configured),
+			providers: Array.from(providerMap.values()).sort((a, b) => a.name.localeCompare(b.name)),
+			models,
+		};
+	}
+
+	async loginProvider(provider: string, apiKey: string | undefined, openExternal: OpenExternal): Promise<AuthState> {
+		const trimmedProvider = provider.trim();
+		if (!trimmedProvider) {
+			throw new Error("Select a provider.");
+		}
+		const authType = this.getProviderAuthType(trimmedProvider);
+		if (authType === "oauth") {
+			await this.loginOAuthProvider(trimmedProvider, openExternal);
+		} else {
+			const trimmedApiKey = apiKey?.trim();
+			if (!trimmedApiKey) {
+				throw new Error("Enter an API key.");
+			}
+			this.getAuthStorage().set(trimmedProvider, { type: "api_key", key: trimmedApiKey });
+		}
+		this.modelRegistry = undefined;
+		this.services = undefined;
+		return this.getAuthState();
+	}
+
 	async start(cwd: string): Promise<SessionSnapshot> {
+		this.requireConfiguredAuth();
 		await this.disposeSession();
 		this.nextPositionIndex = 0;
 
@@ -78,6 +150,7 @@ export class AgentController {
 	}
 
 	async prompt(text: string, selectedCards: PromptCardContext[]): Promise<void> {
+		this.requireConfiguredAuth();
 		const session = this.requireSession();
 		const promptText =
 			selectedCards.length > 0 ? `${text}\n\nSelected canvas context:\n${formatSelectedCards(selectedCards)}` : text;
@@ -89,11 +162,12 @@ export class AgentController {
 	}
 
 	listModels(): ModelSummary[] {
-		if (!this.services) return [];
-		return this.services.modelRegistry.getAll().map((model) => this.modelToSummary(model));
+		const registry = this.services?.modelRegistry ?? this.getModelRegistry();
+		return registry.getAll().map((model) => this.modelToSummary(model, registry));
 	}
 
 	async setModel(provider: string, id: string): Promise<void> {
+		this.requireConfiguredAuth();
 		const session = this.requireSession();
 		const model = this.services?.modelRegistry.find(provider, id);
 		if (!model) {
@@ -117,6 +191,71 @@ export class AgentController {
 		return this.session;
 	}
 
+	private getAuthStorage(): AuthStorage {
+		if (!this.authStorage) {
+			this.authStorage = AuthStorage.create();
+		}
+		return this.authStorage;
+	}
+
+	private getModelRegistry(): ModelRegistry {
+		if (!this.modelRegistry) {
+			this.modelRegistry = ModelRegistry.create(this.getAuthStorage());
+		}
+		return this.modelRegistry;
+	}
+
+	private getProviderAuthType(providerId: string): LoginAuthType {
+		const oauthProviderIds = new Set(
+			this.getAuthStorage()
+				.getOAuthProviders()
+				.map((provider) => provider.id),
+		);
+		return isApiKeyLoginProvider(providerId, oauthProviderIds) ? "api_key" : "oauth";
+	}
+
+	private async loginOAuthProvider(providerId: string, openExternal: OpenExternal): Promise<void> {
+		const authStorage = this.getAuthStorage();
+		const provider = authStorage.getOAuthProviders().find((candidate) => candidate.id === providerId);
+		if (!provider) {
+			throw new Error(`Provider ${providerId} does not support subscription login.`);
+		}
+		await authStorage.login(providerId as OAuthProviderId, {
+			onAuth: (info) => {
+				this.emit({
+					type: "login-status",
+					message: info.instructions ?? `Browser login opened for ${provider.name}.`,
+				});
+				void openExternal(info.url);
+			},
+			onDeviceCode: (info) => {
+				this.emit({
+					type: "login-status",
+					message: `Open ${info.verificationUri} and enter code ${info.userCode}.`,
+				});
+				void openExternal(info.verificationUri);
+			},
+			onPrompt: async (prompt) => {
+				if (prompt.allowEmpty) return "";
+				throw new Error(`${prompt.message} is not supported in the desktop login flow yet.`);
+			},
+			onProgress: (message) => {
+				this.emit({ type: "login-status", message });
+			},
+			onSelect: async (prompt) => {
+				const browserOption = prompt.options.find((option) => option.id === "browser");
+				return browserOption?.id ?? prompt.options[0]?.id;
+			},
+		});
+		this.emit({ type: "login-status", message: `Logged in to ${provider.name}.` });
+	}
+
+	private requireConfiguredAuth(): void {
+		if (!this.getAuthState().loggedIn) {
+			throw new Error("Login is required before using Pi Analytics.");
+		}
+	}
+
 	private handleSessionEvent(event: AgentSessionEvent): void {
 		for (const normalized of normalizeSessionEvent(event, () => this.nextPosition())) {
 			this.emit(normalized);
@@ -135,8 +274,10 @@ export class AgentController {
 		};
 	}
 
-	private modelToSummary(model: Model<Api>): ModelSummary {
-		const registry = this.services?.modelRegistry;
+	private modelToSummary(
+		model: Model<Api>,
+		registry: ModelRegistry | undefined = this.services?.modelRegistry,
+	): ModelSummary {
 		return {
 			provider: model.provider,
 			id: model.id,
@@ -147,6 +288,16 @@ export class AgentController {
 			reasoning: model.reasoning,
 		};
 	}
+}
+
+function isApiKeyLoginProvider(providerId: string, oauthProviderIds: ReadonlySet<string>): boolean {
+	if (BUILT_IN_PROVIDER_DISPLAY_NAMES[providerId]) {
+		return true;
+	}
+	if (BUILT_IN_MODEL_PROVIDERS.has(providerId)) {
+		return false;
+	}
+	return !oauthProviderIds.has(providerId);
 }
 
 function formatSelectedCards(cards: PromptCardContext[]): string {

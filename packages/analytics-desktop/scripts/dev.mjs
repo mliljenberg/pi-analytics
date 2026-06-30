@@ -50,9 +50,22 @@ if (!rendererUrl) {
 	throw new Error("Vite did not expose a local renderer URL.");
 }
 
-const electronBuild = await context({
-	entryPoints: ["src/main.ts", "src/preload.ts"],
+const electronMainBuild = await context({
+	entryPoints: ["src/main.ts"],
 	bundle: true,
+	banner: {
+		js: 'import * as __piNodeModule from "node:module"; const require = __piNodeModule.createRequire(import.meta.url);',
+	},
+	plugins: [
+		{
+			name: "desktop-tui-stub",
+			setup(build) {
+				build.onResolve({ filter: /^@earendil-works\/pi-tui$/ }, () => ({
+					path: join(process.cwd(), "src/main/pi-tui-stub.ts"),
+				}));
+			},
+		},
+	],
 	format: "esm",
 	platform: "node",
 	target: "node22",
@@ -62,8 +75,22 @@ const electronBuild = await context({
 	external: ["electron"],
 	tsconfig: "tsconfig.build.json",
 });
-await electronBuild.watch();
-await electronBuild.rebuild();
+const electronPreloadBuild = await context({
+	entryPoints: ["src/preload.ts"],
+	bundle: true,
+	format: "cjs",
+	platform: "node",
+	target: "node22",
+	outfile: "dist/electron/preload.cjs",
+	sourcemap: true,
+	ignoreAnnotations: true,
+	external: ["electron"],
+	tsconfig: "tsconfig.build.json",
+});
+await electronMainBuild.watch();
+await electronPreloadBuild.watch();
+await electronMainBuild.rebuild();
+await electronPreloadBuild.rebuild();
 
 const child = spawn(electronPath, ["dist/electron/main.js"], {
 	stdio: "inherit",
@@ -75,7 +102,8 @@ const child = spawn(electronPath, ["dist/electron/main.js"], {
 
 const shutdown = async () => {
 	child.kill();
-	await electronBuild.dispose();
+	await electronMainBuild.dispose();
+	await electronPreloadBuild.dispose();
 	await viteServer.close();
 };
 

@@ -1,13 +1,15 @@
 import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions, type SaveDialogOptions } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions, type SaveDialogOptions, shell } from "electron";
 import { AgentController } from "./main/agent-controller.ts";
 import { BoardStore } from "./main/board-store.ts";
 import type { CanvasCard } from "./shared/canvas.ts";
 import {
+	type AuthState,
 	type ExportReportRequest,
 	IPC,
+	type LoginProviderRequest,
 	type MainToRendererEvent,
 	type SaveBoardRequest,
 	type SendPromptRequest,
@@ -55,7 +57,7 @@ async function createWindow(): Promise<void> {
 		webPreferences: {
 			contextIsolation: true,
 			nodeIntegration: false,
-			preload: join(currentDirectory, "preload.js"),
+			preload: join(currentDirectory, "preload.cjs"),
 		},
 	});
 
@@ -79,6 +81,17 @@ ipcMain.handle(IPC.selectWorkspaceFolder, async (): Promise<WorkspaceFolder | un
 	const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
 	if (result.canceled || result.filePaths.length === 0) return undefined;
 	return { path: result.filePaths[0] };
+});
+
+ipcMain.handle(IPC.getAuthState, async (): Promise<AuthState> => {
+	return getAgentController().getAuthState();
+});
+
+ipcMain.handle(IPC.loginProvider, async (_event, request: unknown): Promise<AuthState> => {
+	if (!isLoginProviderRequest(request)) {
+		throw new Error("Invalid login request.");
+	}
+	return getAgentController().loginProvider(request.provider, request.apiKey, (url) => shell.openExternal(url));
 });
 
 ipcMain.handle(IPC.startSession, async (_event, cwd: unknown): Promise<SessionSnapshot> => {
@@ -154,6 +167,14 @@ function isSendPromptRequest(value: unknown): value is SendPromptRequest {
 
 function isSetModelRequest(value: unknown): value is SetModelRequest {
 	return isRecord(value) && typeof value.provider === "string" && typeof value.id === "string";
+}
+
+function isLoginProviderRequest(value: unknown): value is LoginProviderRequest {
+	return (
+		isRecord(value) &&
+		typeof value.provider === "string" &&
+		(value.apiKey === undefined || typeof value.apiKey === "string")
+	);
 }
 
 function isSaveBoardRequest(value: unknown): value is SaveBoardRequest {
