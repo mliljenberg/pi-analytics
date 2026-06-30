@@ -407,6 +407,7 @@ function renderChat(): void {
 function renderAgentLoading(): void {
 	const activeTask = activeTaskView();
 	const activeBusy = activeTask ? isTaskBusy(activeTask) : state.busy;
+	chatDock.classList.toggle("loading", activeBusy);
 	agentLoading.classList.toggle("open", activeBusy);
 	agentLoadingText.textContent = activeTask ? activeTask.statusText : state.statusText;
 }

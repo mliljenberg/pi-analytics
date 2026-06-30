@@ -326,6 +326,54 @@ input:disabled {
 	overflow: hidden;
 }
 
+.chat-dock.loading::before,
+.canvas-card.loading::before {
+	content: "";
+	position: absolute;
+	inset: -1px;
+	z-index: 1;
+	border-radius: inherit;
+	padding: 2px;
+	background: conic-gradient(
+		from 0deg,
+		rgba(40, 110, 240, 0) 0deg,
+		rgba(40, 110, 240, 0) 42deg,
+		rgba(40, 110, 240, 0.94) 78deg,
+		rgba(22, 168, 137, 0.9) 118deg,
+		rgba(123, 97, 255, 0.92) 158deg,
+		rgba(239, 106, 79, 0.86) 192deg,
+		rgba(239, 106, 79, 0) 236deg,
+		rgba(40, 110, 240, 0) 360deg
+	);
+	pointer-events: none;
+	animation: loading-border-orbit 2.8s linear infinite;
+	-webkit-mask:
+		linear-gradient(#000 0 0) content-box,
+		linear-gradient(#000 0 0);
+	-webkit-mask-composite: xor;
+	mask-composite: exclude;
+}
+
+.chat-dock.loading::after,
+.canvas-card.loading::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	border-radius: inherit;
+	background:
+		radial-gradient(circle at 80% 20%, rgba(40, 110, 240, 0.14), transparent 34%),
+		radial-gradient(circle at 18% 88%, rgba(22, 168, 137, 0.1), transparent 30%);
+	pointer-events: none;
+	opacity: 0.72;
+}
+
+.chat-dock > *,
+.canvas-card > * {
+	position: relative;
+	z-index: 2;
+}
+
 .chat-dock.right {
 	left: auto;
 	right: 22px;
@@ -604,6 +652,19 @@ input:disabled {
 .canvas-card:hover {
 	transform: translateY(-2px);
 	box-shadow: var(--shadow-md);
+}
+
+.canvas-card.loading {
+	border-color: rgba(40, 110, 240, 0.32);
+	box-shadow:
+		0 0 0 1px rgba(40, 110, 240, 0.08),
+		var(--shadow-sm);
+}
+
+.canvas-card.loading:hover {
+	box-shadow:
+		0 0 0 1px rgba(40, 110, 240, 0.12),
+		var(--shadow-md);
 }
 
 .canvas-card.dragging {
@@ -1222,10 +1283,22 @@ input:disabled {
 	}
 }
 
+@keyframes loading-border-orbit {
+	to {
+		transform: rotate(1turn);
+	}
+}
+
 @media (prefers-reduced-motion: reduce) {
+	.chat-dock.loading::before,
+	.canvas-card.loading::before,
 	.loading-track span,
 	.card-loading-fill.indeterminate {
 		animation: none;
+	}
+
+	.loading-track span,
+	.card-loading-fill.indeterminate {
 		width: 100%;
 	}
 }
