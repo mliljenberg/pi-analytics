@@ -241,6 +241,7 @@ input:disabled {
 
 .workspace-canvas {
 	z-index: 1;
+	pointer-events: none;
 }
 
 .workspace-canvas > .canvas-card {
@@ -253,6 +254,11 @@ input:disabled {
 	z-index: 2;
 	transform-origin: 0 0;
 	will-change: transform;
+	pointer-events: none;
+}
+
+.card-host .canvas-card {
+	pointer-events: auto;
 }
 
 .html-canvas-active .card-host .canvas-card {
