@@ -74,13 +74,47 @@ export function normalizeSessionEvent(event: AgentSessionEvent): MainToRendererE
 		return [{ type: "status", text: event.aborted ? "Compaction aborted" : "Ready", busy: false }];
 	}
 	if (event.type === "auto_retry_start") {
+		const text = normalizeProviderErrorMessage(event.errorMessage);
 		return [
-			{ type: "status", text: `Retrying after provider error (${event.attempt}/${event.maxAttempts})`, busy: true },
+			{
+				type: "chat-message",
+				id: `retry-${event.attempt}-${Date.now()}`,
+				author: "System",
+				text: `Provider error (${event.attempt}/${event.maxAttempts}): ${text}`,
+				timestamp: new Date().toISOString(),
+			},
+			{
+				type: "status",
+				text: `Retrying after provider error (${event.attempt}/${event.maxAttempts}): ${shortenStatusText(text)}`,
+				busy: true,
+			},
 		];
 	}
 	if (event.type === "auto_retry_end") {
-		return [{ type: "status", text: event.success ? "Ready" : "Retry failed", busy: false }];
+		if (event.success) {
+			return [{ type: "status", text: "Ready", busy: false }];
+		}
+		const text = normalizeProviderErrorMessage(event.finalError);
+		return [
+			{
+				type: "chat-message",
+				id: `retry-failed-${Date.now()}`,
+				author: "System",
+				text: `Retry failed: ${text}`,
+				timestamp: new Date().toISOString(),
+			},
+			{ type: "status", text: `Retry failed: ${shortenStatusText(text)}`, busy: false },
+		];
 	}
 
 	return [];
+}
+
+function normalizeProviderErrorMessage(message: string | undefined): string {
+	const trimmed = message?.trim().replace(/\s+/g, " ");
+	return trimmed && trimmed.length > 0 ? trimmed : "No provider error details were reported.";
+}
+
+function shortenStatusText(message: string): string {
+	return message.length > 140 ? `${message.slice(0, 137)}...` : message;
 }
