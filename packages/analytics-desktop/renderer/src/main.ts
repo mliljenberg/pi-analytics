@@ -9,6 +9,7 @@ import type {
 	SessionSnapshot,
 	TaskSnapshot,
 } from "../../src/shared/ipc.ts";
+import createLucideIcon, { Download, Maximize2, Minimize2, PanelBottom, PanelRight, Square, X } from "lucide";
 import "./styles.css";
 import "./canvas-artifacts.css";
 
@@ -23,6 +24,8 @@ interface StreamingMessage {
 	id: string;
 	text: string;
 }
+
+type LucideIconNode = typeof X;
 
 interface TaskView extends TaskSnapshot {
 	messages: ChatMessage[];
@@ -213,6 +216,12 @@ function setChatDockMinimized(minimized: boolean): void {
 	renderChatDock();
 }
 
+function setIconButton(button: HTMLButtonElement, icon: LucideIconNode, label: string): void {
+	button.replaceChildren(createLucideIcon(icon, { class: "lucide-icon", "aria-hidden": "true" }));
+	button.ariaLabel = label;
+	button.title = label;
+}
+
 function render(): void {
 	renderAuth();
 	renderStatus();
@@ -312,12 +321,8 @@ function renderChatDock(): void {
 	chatDock.classList.toggle("right", state.chatDockPosition === "right");
 	chatDock.classList.toggle("minimized", state.chatDockMinimized);
 	const nextPosition = state.chatDockPosition === "right" ? "bottom" : "right";
-	dockToggleButton.textContent = nextPosition === "right" ? "▐" : "▁";
-	dockToggleButton.ariaLabel = `Dock ${nextPosition}`;
-	dockToggleButton.title = `Dock ${nextPosition}`;
-	dockMinimizeButton.textContent = state.chatDockMinimized ? "▣" : "−";
-	dockMinimizeButton.ariaLabel = state.chatDockMinimized ? "Expand chat" : "Minimize chat";
-	dockMinimizeButton.title = state.chatDockMinimized ? "Expand chat" : "Minimize chat";
+	setIconButton(dockToggleButton, nextPosition === "right" ? PanelRight : PanelBottom, `Dock ${nextPosition}`);
+	setIconButton(dockMinimizeButton, state.chatDockMinimized ? Square : Minimize2, state.chatDockMinimized ? "Expand chat" : "Minimize chat");
 }
 
 function renderChatTabs(): void {
@@ -531,14 +536,11 @@ function actionButton(label: string, action: string, inert: boolean): HTMLButton
 	button.ariaLabel = label;
 	button.title = label;
 	if (action === "open") {
-		const glyph = document.createElement("span");
-		glyph.className = "expand-glyph";
-		glyph.ariaHidden = "true";
-		button.appendChild(glyph);
+		button.appendChild(createLucideIcon(Maximize2, { class: "lucide-icon", "aria-hidden": "true" }));
 	} else if (action === "close") {
-		button.textContent = "x";
+		button.appendChild(createLucideIcon(X, { class: "lucide-icon", "aria-hidden": "true" }));
 	} else {
-		button.textContent = label;
+		button.appendChild(createLucideIcon(Download, { class: "lucide-icon", "aria-hidden": "true" }));
 	}
 	if (inert) {
 		button.tabIndex = -1;

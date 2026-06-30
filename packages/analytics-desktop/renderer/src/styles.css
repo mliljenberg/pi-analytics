@@ -400,7 +400,6 @@ input:disabled {
 	background: rgba(255, 255, 255, 0.78);
 	color: #4c5564;
 	padding: 0;
-	font-size: 17px;
 	font-weight: 650;
 	line-height: 1;
 	display: inline-grid;
@@ -802,49 +801,23 @@ input:disabled {
 	width: 30px;
 	height: 30px;
 	flex: 0 0 30px;
-	font-size: 12px;
-	font-weight: 650;
 }
 
 .export-action {
-	width: auto;
-	flex-basis: auto;
-	padding: 0 8px;
+	width: 30px;
+	flex-basis: 30px;
+	padding: 0;
 }
 
 .close-action {
 	color: #7d8490;
-	font-size: 16px;
-	line-height: 1;
 }
 
-.expand-glyph {
-	position: relative;
-	width: 14px;
-	height: 14px;
-	display: block;
-}
-
-.expand-glyph::before,
-.expand-glyph::after {
-	content: "";
-	position: absolute;
-	width: 7px;
-	height: 7px;
-	border-color: currentColor;
-	border-style: solid;
-}
-
-.expand-glyph::before {
-	left: 0;
-	top: 0;
-	border-width: 1.5px 0 0 1.5px;
-}
-
-.expand-glyph::after {
-	right: 0;
-	bottom: 0;
-	border-width: 0 1.5px 1.5px 0;
+.lucide-icon {
+	width: 16px;
+	height: 16px;
+	stroke: currentColor;
+	stroke-width: 2;
 }
 
 .card-loading {
